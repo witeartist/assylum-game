@@ -1,26 +1,36 @@
 // ============================================================
-//  ASSYLUM — main.ts — Entry point
+//  ASSYLUM — entry point
 // ============================================================
 import Phaser from "phaser";
-import { CANVAS_W, CANVAS_H } from "./config";
-import { BootScene, MenuScene, SelectScene, LobbyScene, GameOverScene, WinScene } from "./scenes";
-import { GameScene } from "./game";
+import { CANVAS_W, CANVAS_H } from "./core/constants";
+import { RES } from "./render/display";
+import { BootScene } from "./scenes/BootScene";
+import { MenuScene } from "./scenes/MenuScene";
+import { SelectScene } from "./scenes/SelectScene";
+import { LobbyScene } from "./scenes/LobbyScene";
+import { SettingsScene } from "./scenes/SettingsScene";
+import { GameScene } from "./scenes/GameScene";
+import { HudScene } from "./scenes/HudScene";
+import { ResultScene } from "./scenes/ResultScene";
 
-console.log("[ASSYLUM] main.ts loading, creating Phaser.Game...");
-
-new Phaser.Game({
-  type: Phaser.AUTO,
+const game = new Phaser.Game({
+  // WebGL is required: lighting is a shader.
+  type: Phaser.WEBGL,
   parent: "gameContainer",
-  width:  CANVAS_W,
-  height: CANVAS_H,
+  width: CANVAS_W * RES,
+  height: CANVAS_H * RES,
   backgroundColor: "#000000",
   physics: {
     default: "arcade",
     arcade: { gravity: { x: 0, y: 0 }, debug: false },
   },
-  scene: [BootScene, MenuScene, SelectScene, LobbyScene, GameScene, GameOverScene, WinScene],
+  // Order = draw order: the HUD renders above the game.
+  scene: [BootScene, MenuScene, SelectScene, LobbyScene, SettingsScene, GameScene, HudScene, ResultScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
 });
+
+// Dev-only handle for debugging and automated browser checks (stripped from production builds).
+if (import.meta.env.DEV) (window as unknown as { __assylum: Phaser.Game }).__assylum = game;
