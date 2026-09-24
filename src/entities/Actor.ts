@@ -5,7 +5,7 @@ import { TILE } from "../core/constants";
 import type { RunnerStatus, Role, Tile, Vec2 } from "../core/types";
 import type { CharacterDef } from "../data/characters";
 import { DEFAULT_FLASHLIGHT_MODE } from "../data/balance";
-import { DEPTH, textStyle } from "../ui/theme";
+import { DEPTH } from "../ui/theme";
 
 /** Who drives the actor: this peer's input, a bot/AI brain here, or another peer. */
 export type Control = "local" | "bot" | "ai" | "remote";
@@ -36,12 +36,20 @@ const REMOTE_ALPHA = 0.8;
 const REMOTE_LERP = 0.3;
 const WAYPOINT_REACHED = 4;
 const STUCK_TIME = 0.2;
+const BOB_HEIGHT = 2.2;
+const BOB_TILT = 0.05;
 
+/**
+ * The Actor itself is an invisible physics body centred on its position; what you see is
+ * `view` (drawn standing on `feetY`, sorted by depth with walls and furniture) plus a soft
+ * shadow on the floor.
+ */
 export class Actor extends Phaser.Physics.Arcade.Sprite {
   readonly id: string;
   readonly def: CharacterDef;
   readonly control: Control;
-  readonly tag: Phaser.GameObjects.Text;
+  readonly view: Phaser.GameObjects.Sprite;
+  readonly shadow: Phaser.GameObjects.Image;
   status: RunnerStatus = "alive";
   hiding = false;
   speed: number;
@@ -59,6 +67,8 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   private stuckT = 0;
   private prevX: number;
   private prevY: number;
+  private bobT = 0;
+  private readonly footOffset: number;
 
   constructor(scene: Phaser.Scene, o: ActorOptions) {
     super(scene, o.pos.x, o.pos.y, o.def.texture);
@@ -70,9 +80,13 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     this.prevY = o.pos.y;
     scene.add.existing(this);
     const scale = o.def.height / this.frame.height;
-    this.setScale(scale).setDepth(DEPTH.actors);
+    this.setScale(scale).setVisible(false);
+    this.footOffset = o.def.body * 0.3;
+    this.view = scene.add.sprite(o.pos.x, o.pos.y, o.def.texture).setOrigin(0.5, 1).setScale(scale);
+    this.shadow = scene.add.image(o.pos.x, o.pos.y, "fx/shadow").setDepth(DEPTH.shadows).setAlpha(0.8);
+    this.shadow.setDisplaySize(o.def.body * 1.6, o.def.body * 0.7);
     if (o.control === "remote") {
-      this.setAlpha(REMOTE_ALPHA);
+      this.view.setAlpha(REMOTE_ALPHA);
       this.net = { x: o.pos.x, y: o.pos.y, vx: 0, vy: 0, a: this.facing, fl: 0 };
       this.netTarget = { x: o.pos.x, y: o.pos.y };
     } else {
@@ -81,11 +95,14 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
       this.arcadeBody!.setSize(o.def.body / scale, o.def.body / scale);
       this.setCollideWorldBounds(true);
     }
-    this.tag = scene.add.text(o.pos.x, this.tagY(), o.def.name, textStyle("tag", o.def.color))
-      .setOrigin(0.5).setDepth(DEPTH.tags);
+    this.syncView(0);
   }
 
   get role(): Role { return this.def.role; }
+  /** Where the character stands (bottom of the sprite, its depth-sort line). */
+  get feetY(): number { return this.y + this.footOffset; }
+  /** Drawn on screen right now. */
+  get shown(): boolean { return this.view.visible; }
   get inPlay(): boolean { return this.status === "alive"; }
   get arcadeBody(): Phaser.Physics.Arcade.Body | null { return this.body as Phaser.Physics.Arcade.Body | null; }
 
@@ -174,8 +191,8 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
 
   refreshVisibility(): void {
     const visible = this.inPlay && !this.hiding && this.seen;
-    this.setVisible(visible);
-    this.tag.setVisible(visible);
+    this.view.setVisible(visible);
+    this.shadow.setVisible(visible);
   }
 
   /** Remote actors: take a network update. */
@@ -204,13 +221,27 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
       this.x += (this.netTarget.x - this.x) * REMOTE_LERP;
       this.y += (this.netTarget.y - this.y) * REMOTE_LERP;
     }
-    this.tag.setPosition(this.x, this.tagY());
+    this.syncView(delta / 1000);
   }
 
-  private tagY(): number { return this.y - this.def.height / 2; }
+  /** Place the visible sprite: stand on the feet line, bob and lean while walking, face the way we go. */
+  private syncView(dt: number): void {
+    const v = this.velocity;
+    const speed = Math.hypot(v.x, v.y);
+    if (speed > 20) this.bobT += dt * speed / 38;
+    else this.bobT = 0;
+    const phase = Math.sin(this.bobT * Math.PI);
+    if (v.x < -5) this.view.setFlipX(true);
+    else if (v.x > 5) this.view.setFlipX(false);
+    this.view.setPosition(this.x, this.feetY - Math.abs(phase) * BOB_HEIGHT)
+      .setRotation(speed > 20 ? phase * BOB_TILT : 0)
+      .setDepth(this.feetY);
+    this.shadow.setPosition(this.x, this.feetY - 1);
+  }
 
   override destroy(fromScene?: boolean): void {
-    this.tag.destroy();
+    this.view.destroy();
+    this.shadow.destroy();
     super.destroy(fromScene);
   }
 }

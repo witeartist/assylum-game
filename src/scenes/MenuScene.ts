@@ -1,15 +1,16 @@
 import Phaser from "phaser";
 import { CANVAS_W } from "../core/constants";
 import { CHARACTERS, HUNTER_ID, RUNNER_IDS } from "../data/characters";
-import { backdrop, button, label, panel, portrait, reveal, scrim } from "../ui/components";
+import { backdrop, button, label, panel, portrait, reveal, scrim, uiCamera } from "../ui/components";
 import { INK, SURFACE, TONES, toCss } from "../ui/theme";
 
 export class MenuScene extends Phaser.Scene {
   constructor() { super("Menu"); }
 
   create(): void {
+    uiCamera(this);
     const CX = CANVAS_W / 2;
-    backdrop(this, "ui.menuArt");
+    backdrop(this, "ui/menu_art");
     scrim(this, 0.72);
 
     reveal(this, label(this, CX, 56, "A S Y L U M", "display", INK.title), 0, { dy: 20, duration: 800 });

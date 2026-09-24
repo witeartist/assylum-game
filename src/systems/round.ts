@@ -9,7 +9,6 @@ import type { RunnerStatus } from "../core/types";
 
 const END_DELAY = 600;
 const HOST_LINGER = 1500;
-const SPECTATE_LERP = 0.08;
 
 export interface ResultData extends RunnerCounts {
   outcome: ReturnType<typeof outcomeFor>;
@@ -133,7 +132,7 @@ export class Round {
     if (!this.localDone) return;
     const target = this.spectateTarget();
     if (target) {
-      this.world.scene.cameras.main.startFollow(target, true, SPECTATE_LERP, SPECTATE_LERP);
+      this.world.camera.follow(target);
       this.spectateText = "👁 НАБЛЮДЕНИЕ: " + target.def.name + "  [Tab — переключить | ESC — выход]";
     } else {
       this.spectateText = this.world.multiplayer ? "Ожидание конца раунда…  [ESC — выход]" : null;

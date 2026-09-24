@@ -3,9 +3,15 @@
 import Phaser from "phaser";
 import { CANVAS_W, CANVAS_H } from "../core/constants";
 import type { EventBus } from "../core/events";
+import { RES } from "../render/display";
 import { INK, SURFACE, TONES, UI_DEPTH, textStyle, toCss, type TextKind, type Tone } from "./theme";
 
 type Scene = Phaser.Scene;
+
+/** Every screen-space scene calls this first: its camera shows the logical 960×600 layout at RES. */
+export function uiCamera(scene: Scene): void {
+  scene.cameras.main.setZoom(RES).centerOn(CANVAS_W / 2, CANVAS_H / 2);
+}
 
 export interface LabelOptions {
   origin?: number | [number, number];

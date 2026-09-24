@@ -1,14 +1,15 @@
 import Phaser from "phaser";
 import { CANVAS_W } from "../core/constants";
 import { setMusicVolume } from "../core/audio";
-import { settings, updateSettings } from "../core/settings";
-import { ToggleRow, backLink, label, slider } from "../ui/components";
+import { settings, updateSettings, type Quality } from "../core/settings";
+import { ToggleRow, backLink, label, slider, uiCamera } from "../ui/components";
 import { INK } from "../ui/theme";
 
 export class SettingsScene extends Phaser.Scene {
   constructor() { super("Settings"); }
 
   create(): void {
+    uiCamera(this);
     const CX = CANVAS_W / 2;
     label(this, CX, 80, "НАСТРОЙКИ", "h1", INK.title);
 
@@ -21,6 +22,14 @@ export class SettingsScene extends Phaser.Scene {
       { id: "on", label: "ВКЛ", tone: "good" },
       { id: "off", label: "ВЫКЛ", tone: "neutral" },
     ], settings.showFps ? "on" : "off", v => updateSettings({ showFps: v === "on" }), { w: 90 });
+
+    label(this, CX, 370, "Графика", "body", INK.body);
+    new ToggleRow<Quality>(this, CX, 405, [
+      { id: "low", label: "НИЗКАЯ", tone: "neutral" },
+      { id: "medium", label: "СРЕДНЯЯ", tone: "warn" },
+      { id: "high", label: "ВЫСОКАЯ", tone: "good" },
+    ], settings.quality, v => updateSettings({ quality: v }));
+    label(this, CX, 440, "Разрешение меняется после перезагрузки страницы", "tiny", INK.dim);
 
     backLink(this, () => this.scene.start("Menu"));
   }

@@ -9,14 +9,12 @@ import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import type { GoalCandidate } from "../ai/goals";
 import type { LockedDoor } from "../world/level";
-import { DEPTH, TONES, INK, textStyle } from "../ui/theme";
+import { placeStanding } from "../render/worldView";
 
 interface DoorState {
   data: LockedDoor;
   open: boolean;
-  barriers: Phaser.GameObjects.Image[];
   terminal: Phaser.GameObjects.Image;
-  label: Phaser.GameObjects.Text;
   /** Bot hacking progress, 0..1. */
   hack: number;
 }
@@ -30,7 +28,7 @@ export interface Minigame {
   feedback: "ok" | "bad" | null;
 }
 
-const TERMINAL_SCALE = 1.8;
+const TERMINAL_WIDTH = TILE * 0.75;
 
 export class Doors {
   readonly doors: DoorState[];
@@ -39,13 +37,17 @@ export class Doors {
   constructor(private world: World) {
     const scene = world.scene;
     this.doors = world.level.lockedDoors.map(data => {
-      const barriers = data.doorTiles.map(t =>
-        scene.add.image(t.col * TILE, t.row * TILE, "tile.wall").setOrigin(0).setDepth(DEPTH.walls + 1));
       const p = tileCenter(data.terminalTile);
-      const terminal = scene.add.image(p.x, p.y, "prop.terminal").setScale(TERMINAL_SCALE).setDepth(DEPTH.pickups);
-      const label = scene.add.text(p.x, p.y - 14, "ТЕРМИНАЛ", textStyle("tag", TONES.terminal.ink)).setOrigin(0.5).setDepth(DEPTH.tags);
-      return { data, open: false, barriers, terminal, label, hack: 0 };
+      const terminal = placeStanding(scene, "interactive/terminal", p.x, p.y + TILE * 0.3, TERMINAL_WIDTH);
+      return { data, open: false, terminal, hack: 0 };
     });
+  }
+
+  /** Text above terminal `i`, shown by the HUD. */
+  label(i: number): { text: string; tone: "terminal" | "neutral" } {
+    const d = this.doors[i];
+    if (d.open) return { text: "ОТКРЫТО", tone: "neutral" };
+    return { text: d.hack > 0 ? "ВЗЛОМ " + Math.floor(d.hack * 100) + "%" : "ТЕРМИНАЛ", tone: "terminal" };
   }
 
   /** Index of an unsolved terminal within reach of `p`, or -1. */
@@ -99,7 +101,6 @@ export class Doors {
     a.path = [];
     a.halt();
     d.hack = Math.min(1, d.hack + dt / BOT_HACK_TIME);
-    d.label.setText("ВЗЛОМ " + Math.floor(d.hack * 100) + "%");
     if (d.hack >= 1) this.open(i, a.def.name);
     return true;
   }
@@ -110,8 +111,6 @@ export class Doors {
     const w = this.world;
     if (!d || d.open) return false;
     d.open = true;
-    d.label.setText("ОТКРЫТО").setColor(INK.faint);
-    d.barriers.forEach(b => b.destroy());
     for (const t of d.data.doorTiles) {
       w.grid.setSolid(t, false);
       w.collision.open(t);

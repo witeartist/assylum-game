@@ -1,6 +1,7 @@
 // Design system tokens: colors, tones, typography and depth layers. Every scene and
 // component takes its look from here — change a value once and the whole game follows.
 import type Phaser from "phaser";
+import { RES } from "../render/display";
 
 /** Semantic color of a message, button or accent. */
 export type Tone = "neutral" | "blood" | "good" | "bad" | "warn" | "key" | "terminal" | "info" | "spectate" | "hunter";
@@ -84,21 +85,25 @@ const TYPE: Record<TextKind, { font: string; size: number; bold?: boolean }> = {
   tag:     { font: FONTS.ui, size: 9 },
 };
 
+/** Text style from the type scale. Text is rasterised at the render scale so it stays crisp. */
 export function textStyle(kind: TextKind, ink: string = INK.text): Phaser.Types.GameObjects.Text.TextStyle {
   const t = TYPE[kind];
-  return { fontFamily: t.font, fontSize: t.size + "px", fontStyle: t.bold ? "bold" : "normal", color: ink };
+  return { fontFamily: t.font, fontSize: t.size + "px", fontStyle: t.bold ? "bold" : "normal", color: ink, resolution: RES };
 }
 
-/** Draw order inside the world camera. */
+/**
+ * Draw order inside the world camera. Standing objects (characters, furniture, pickups) are
+ * sorted by the y of their base, i.e. depths 0..WORLD_H, between the floor and the wall tops.
+ */
 export const DEPTH = {
-  floor: -100,
-  walls: -80,
-  decor: 0,
-  corpse: 0.5,
-  pickups: 1,
-  actors: 5,
-  tags: 10,
-  fog: 50,
+  floor: -3000,
+  /** Things lying flat on the floor: blood from catches, the exit hatch. */
+  floorObjects: -2500,
+  shadows: -2000,
+  dust: 3500,
+  /** Wall tops cover whatever stands behind (north of) a wall. */
+  caps: 4000,
+  ceiling: 4500,
 } as const;
 
 /** Draw order inside the HUD scene. */

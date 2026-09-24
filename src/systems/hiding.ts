@@ -7,14 +7,14 @@ import type { Vec2 } from "../core/types";
 import { BED_RANGE, LOCKER_RANGE } from "../data/balance";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
-import { DEPTH } from "../ui/theme";
+import { placeStanding } from "../render/worldView";
 
 export interface HideSpot extends Vec2 {
   kind: "locker" | "bed";
   sprite: Phaser.GameObjects.Image;
 }
 
-const LOCKER_SCALE = 1.6;
+const LOCKER_WIDTH = TILE * 0.85;
 
 export class Hiding {
   readonly spots: HideSpot[] = [];
@@ -23,15 +23,16 @@ export class Hiding {
     const scene = world.scene;
     for (const t of world.level.hidingSpots) {
       const p = tileCenter(t);
-      const sprite = scene.add.image(p.x, p.y, "prop.locker").setScale(LOCKER_SCALE).setDepth(DEPTH.decor);
+      const sprite = placeStanding(scene, "interactive/locker_closed", p.x, p.y + TILE * 0.45, LOCKER_WIDTH);
       this.spots.push({ x: p.x, y: p.y, kind: "locker", sprite });
     }
     for (const bed of world.level.bedSpots) {
       const a = tileCenter(bed.tile), b = tileCenter(bed.tile2);
       const p = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const sprite = scene.add.image(p.x, p.y, bed.sprite).setDepth(DEPTH.decor);
-      // Beds span two tiles along their orientation.
+      const sprite = scene.add.image(p.x, p.y, bed.sprite);
+      // Beds span two tiles along their orientation and sort by their foot end.
       sprite.setScale(bed.orientation === "vertical" ? TILE * 2 / sprite.height : TILE * 2 / sprite.width);
+      sprite.setDepth(p.y + sprite.displayHeight / 2);
       this.spots.push({ x: p.x, y: p.y, kind: "bed", sprite });
     }
   }

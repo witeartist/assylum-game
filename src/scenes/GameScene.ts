@@ -11,8 +11,10 @@ import { World, type NetMode } from "../game/World";
 import { spawnHunterAI, spawnLocalPlayer, spawnRemotePlayer, spawnRunnerBot } from "../game/spawn";
 import { generateLevel } from "../world/levelgen";
 import { CollisionLayer } from "../world/collision";
-import { buildWorldView } from "../render/worldView";
-import { FogOverlay } from "../render/fogOverlay";
+import { WorldView } from "../render/worldView";
+import { CameraRig } from "../render/cameraRig";
+import { addDust } from "../render/dust";
+import { LIGHTING_PIPELINE, LightingPipeline } from "../render/lighting/LightingPipeline";
 import { Lighting } from "../systems/lighting";
 import { FoxFlash } from "../systems/foxFlash";
 import { Hiding } from "../systems/hiding";
@@ -32,13 +34,10 @@ export interface GameSceneData {
   difficulty: DifficultyId;
 }
 
-const CAMERA_LERP = 0.08;
-
 export class GameScene extends Phaser.Scene {
   world: World | null = null;
   private params!: GameSceneData;
   private controls!: InputSystem;
-  private fog!: FogOverlay;
   private netsync: NetSync | null = null;
   private failed = false;
 
@@ -59,10 +58,10 @@ export class GameScene extends Phaser.Scene {
     const w = new World(this, level, diff, net);
 
     playMusic();
-    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
+    w.camera = new CameraRig(this.cameras.main);
 
-    buildWorldView(w);
+    new WorldView(w);
     w.collision = new CollisionLayer(this, w.grid);
     w.lighting = new Lighting(w);
     w.hiding = new Hiding(w);
@@ -91,10 +90,11 @@ export class GameScene extends Phaser.Scene {
     w.vision = new Vision(w);
     bindEffects(w);
     this.controls = new InputSystem(w);
-    this.fog = new FogOverlay(w);
     if (net !== "solo") this.netsync = new NetSync(w);
 
-    this.cameras.main.startFollow(w.local, true, CAMERA_LERP, CAMERA_LERP);
+    w.camera.follow(w.local, true);
+    this.setupLighting(w);
+    addDust(w);
     this.world = w;
     this.scene.launch("Hud", { world: w });
     this.events.once("shutdown", () => this.dispose());
@@ -122,8 +122,18 @@ export class GameScene extends Phaser.Scene {
     w.lighting.update(dt);
     w.noise.update(dt);
     w.vision.update();
-    this.fog.render();
+    w.camera.update(dt);
     this.netsync?.update(time);
+  }
+
+  private setupLighting(w: World): void {
+    const renderer = this.renderer as Phaser.Renderer.WebGL.WebGLRenderer;
+    renderer.pipelines.addPostPipeline(LIGHTING_PIPELINE, LightingPipeline); // no-op if already registered
+    const cam = this.cameras.main;
+    cam.setPostPipeline(LIGHTING_PIPELINE);
+    const lighting = cam.getPostPipeline(LIGHTING_PIPELINE) as LightingPipeline;
+    lighting.world = w;
+    lighting.rig = w.camera;
   }
 
   private dispose(): void {

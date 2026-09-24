@@ -8,6 +8,8 @@ const N = MAP_W * MAP_H;
 /** Walls and closed doors of the map as a flat solid/free array. */
 export class WalkGrid {
   readonly solid: Uint8Array;
+  /** Bumped on every change, so caches (e.g. GPU copies) know when to refresh. */
+  version = 0;
 
   constructor(solid?: Uint8Array) {
     this.solid = solid ?? new Uint8Array(N).fill(1);
@@ -28,6 +30,7 @@ export class WalkGrid {
 
   setSolid(t: Tile, solid: boolean): void {
     this.solid[t.row * MAP_W + t.col] = solid ? 1 : 0;
+    this.version++;
   }
 
   /** Copy with extra solid tiles (e.g. every locked door shut). */

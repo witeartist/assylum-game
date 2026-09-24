@@ -3,7 +3,7 @@ import { CANVAS_W } from "../core/constants";
 import { settings, updateSettings } from "../core/settings";
 import { CHARACTERS, PLAYABLE_IDS } from "../data/characters";
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from "../data/difficulty";
-import { ToggleRow, backLink, button, label, panel, portrait } from "../ui/components";
+import { ToggleRow, backLink, button, label, panel, portrait, uiCamera } from "../ui/components";
 import { INK, SURFACE } from "../ui/theme";
 import type { GameSceneData } from "./GameScene";
 
@@ -17,6 +17,7 @@ export class SelectScene extends Phaser.Scene {
   constructor() { super("Select"); }
 
   create(): void {
+    uiCamera(this);
     label(this, CANVAS_W / 2, 60, "ВЫБЕРИ ПЕРСОНАЖА", "h1", INK.title);
     label(this, CANVAS_W / 2, 100, "Собери ключи, помоги всем сбежать и выйди!", "small", "#785a5a");
     difficultyToggles(this, 138, 30);

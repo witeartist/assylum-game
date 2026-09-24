@@ -5,7 +5,7 @@ import { CHARACTERS, PLAYABLE_IDS, RUNNER_IDS, type CharacterId } from "../data/
 import { ROOM_CODE_LENGTH, session } from "../net/session";
 import type { GameSceneData } from "./GameScene";
 import { difficultyToggles } from "./SelectScene";
-import { Button, backLink, button, label, listen } from "../ui/components";
+import { Button, backLink, button, label, listen, uiCamera } from "../ui/components";
 import { INK, TONES } from "../ui/theme";
 
 type Mode = "choose" | "busy" | "typing" | "lobby";
@@ -19,6 +19,7 @@ export class LobbyScene extends Phaser.Scene {
   constructor() { super("Lobby"); }
 
   create(): void {
+    uiCamera(this);
     this.mode = "choose";
     this.character = RUNNER_IDS[0];
     this.code = "";

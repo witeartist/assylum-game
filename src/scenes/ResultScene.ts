@@ -5,7 +5,7 @@ import { isDifficultyId } from "../data/difficulty";
 import { settings } from "../core/settings";
 import type { Outcome } from "../game/roundRules";
 import type { ResultData } from "../systems/round";
-import { button, label, portrait } from "../ui/components";
+import { button, label, portrait, uiCamera } from "../ui/components";
 import { INK, TONES, type Tone } from "../ui/theme";
 
 const VIEW: Record<Outcome, { title: string; tone: Tone; good: boolean }> = {
@@ -23,6 +23,7 @@ export class ResultScene extends Phaser.Scene {
   init(data: ResultData): void { this.result = data; }
 
   create(): void {
+    uiCamera(this);
     const d = this.result, CX = CANVAS_W / 2;
     const view = VIEW[d.outcome] ?? VIEW.caught;
     const hunter = d.outcome === "hunt-won" || d.outcome === "hunt-lost";

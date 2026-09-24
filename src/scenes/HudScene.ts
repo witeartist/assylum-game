@@ -6,9 +6,10 @@ import { settings } from "../core/settings";
 import { ROOMS } from "../data/rooms";
 import type { World } from "../game/World";
 import { CONTROLS_HINT } from "../systems/input";
-import { ToastStack, banner, hstack, label, listen, panel, screenFlash } from "../ui/components";
+import { ToastStack, banner, hstack, label, listen, panel, screenFlash, uiCamera } from "../ui/components";
 import { INK, LAYOUT, SURFACE, TONES } from "../ui/theme";
 import { TerminalModal } from "../ui/terminalModal";
+import { WorldOverlay } from "../ui/worldOverlay";
 
 export class HudScene extends Phaser.Scene {
   private world!: World;
@@ -21,13 +22,16 @@ export class HudScene extends Phaser.Scene {
   private spectate!: Phaser.GameObjects.Text;
   private fps!: Phaser.GameObjects.Text;
   private modal: TerminalModal | null = null;
+  private overlay!: WorldOverlay;
 
   constructor() { super("Hud"); }
 
   init(data: { world: World }): void { this.world = data.world; this.modal = null; }
 
   create(): void {
+    uiCamera(this);
     const w = this.world, local = w.local, m = LAYOUT.margin;
+    this.overlay = new WorldOverlay(this, w);
     panel(this, CANVAS_W / 2, LAYOUT.hudBarHeight / 2, CANVAS_W, LAYOUT.hudBarHeight, { fill: SURFACE.bar, alpha: 0.85 });
     this.keys = label(this, m, 10, "", "hud", TONES.key.ink, { origin: 0 });
     this.runners = label(this, 0, 10, "", "hud", INK.goodSoft, { origin: 0 });
@@ -50,6 +54,7 @@ export class HudScene extends Phaser.Scene {
     if (w.round.finished) return;
     const hunter = w.local.role === "hunter";
     const c = w.round.counts();
+    this.overlay.update();
 
     this.keys.setText("🔑 " + w.objectives.collected + "/" + w.objectives.total);
     this.runners.setText(hunter

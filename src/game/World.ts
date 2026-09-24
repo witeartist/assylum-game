@@ -20,6 +20,7 @@ import type { Vision } from "../systems/vision";
 import type { Noise } from "../systems/noise";
 import type { Director } from "../systems/director";
 import type { Round } from "../systems/round";
+import type { CameraRig } from "../render/cameraRig";
 
 /** solo = everything local; host = authoritative peer; client = follows the host. */
 export type NetMode = "solo" | "host" | "client";
@@ -49,6 +50,7 @@ export class World {
   private readonly roomLookup: Int16Array;
 
   local!: Actor;
+  camera!: CameraRig;
   collision!: CollisionLayer;
   objectives!: Objectives;
   doors!: Doors;

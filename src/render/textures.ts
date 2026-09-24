@@ -1,26 +1,60 @@
-// Loading the asset manifest into Phaser, with placeholders for anything missing.
-import type Phaser from "phaser";
-import { IMAGES } from "../data/assets";
+// Loading art into Phaser: hand-made files, generated files (assets/manifest.json) and
+// procedural placeholders for everything that doesn't exist yet.
+import Phaser from "phaser";
+import { GENERATED_INDEX, IMAGES } from "../data/assets";
 import { PLACEHOLDERS, drawPlaceholder, drawSolid } from "./placeholders";
+import { DECALS, SURFACES, WALL_FACE_ART, drawDust, drawShadow } from "./surfaces";
+import { PROP_ART } from "./props";
 
 const MAX_TEXTURE = 2048;
+const INDEX_KEY = "__assetIndex";
 
-/** Queue every manifest image on the scene's loader; failed files get their fallback. */
+interface GeneratedIndex { images?: Record<string, { url: string }>; }
+
+/** Keys still drawn by a placeholder (real files haven't arrived for them). */
+const placeholderKeys = new Set<string>();
+
+export function isPlaceholder(key: string): boolean { return placeholderKeys.has(key); }
+
+/** Boot, step 1: queue the hand-made files and the index of generated art. */
 export function queueImages(scene: Phaser.Scene): void {
+  scene.load.json(INDEX_KEY, GENERATED_INDEX);
   for (const a of IMAGES) scene.load.image(a.key, a.url);
   scene.load.on("loaderror", (file: Phaser.Loader.File) => {
-    const a = IMAGES.find(i => i.key === file.key);
+    if (file.key === INDEX_KEY) return; // no generated art yet
     console.warn("[assets] missing " + file.url + ", using a placeholder");
-    scene.textures.addCanvas(file.key, drawPlaceholder(file.key) ?? drawSolid(a?.fallback ?? "#ff00ff"));
   });
 }
 
-/** After loading: register procedural textures that have no file, trim and size-cap loaded art. */
+/** Boot, step 2: load generated art listed in the index (it overrides hand-made files). */
+export function loadGenerated(scene: Phaser.Scene): Promise<void> {
+  const index = scene.cache.json.get(INDEX_KEY) as GeneratedIndex | undefined;
+  const entries = Object.entries(index?.images ?? {});
+  if (entries.length === 0) return Promise.resolve();
+  for (const [key] of entries) if (scene.textures.exists(key)) scene.textures.remove(key);
+  for (const [key, e] of entries) scene.load.image(key, e.url);
+  return new Promise(resolve => { scene.load.once("complete", () => resolve()); scene.load.start(); });
+}
+
+/** Boot, step 3: fill every missing key with its placeholder, trim and size-cap hand-made art. */
 export function finishImages(scene: Phaser.Scene): void {
-  for (const key of Object.keys(PLACEHOLDERS)) {
-    if (!scene.textures.exists(key)) scene.textures.addCanvas(key, drawPlaceholder(key)!);
+  const tex = scene.textures;
+  const add = (key: string, draw: () => HTMLCanvasElement, filter = Phaser.Textures.FilterMode.LINEAR) => {
+    if (tex.exists(key)) return;
+    tex.addCanvas(key, draw())!.setFilter(filter);
+    placeholderKeys.add(key);
+  };
+  for (const key of Object.keys(PLACEHOLDERS)) add(key, () => drawPlaceholder(key)!, Phaser.Textures.FilterMode.NEAREST);
+  for (const [key, spec] of Object.entries(SURFACES)) add(key, spec.draw);
+  add(WALL_FACE_ART.key, WALL_FACE_ART.draw);
+  for (const [key, spec] of Object.entries(DECALS)) add(key, spec.draw);
+  for (const [key, draw] of Object.entries(PROP_ART)) add(key, draw);
+  add("fx/shadow", drawShadow);
+  add("fx/dust", drawDust);
+  for (const a of IMAGES) {
+    if (!tex.exists(a.key)) { tex.addCanvas(a.key, drawSolid(a.fallback ?? "#ff00ff")); continue; }
+    normalizeTexture(scene, a.key, !!a.trim);
   }
-  for (const a of IMAGES) if (scene.textures.exists(a.key)) normalizeTexture(scene, a.key, !!a.trim);
 }
 
 /** Optionally crop a texture to its non-transparent pixels, and cap its size for older GPUs. */

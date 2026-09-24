@@ -8,3 +8,6 @@ export const WORLD_H = MAP_H * TILE;
 
 export const CANVAS_W = 960;
 export const CANVAS_H = 600;
+
+/** Height of walls in the 3/4 view, world px: the top is drawn this much above the footprint. */
+export const WALL_HEIGHT = TILE / 2;

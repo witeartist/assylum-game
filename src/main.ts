@@ -3,6 +3,7 @@
 // ============================================================
 import Phaser from "phaser";
 import { CANVAS_W, CANVAS_H } from "./core/constants";
+import { RES } from "./render/display";
 import { BootScene } from "./scenes/BootScene";
 import { MenuScene } from "./scenes/MenuScene";
 import { SelectScene } from "./scenes/SelectScene";
@@ -13,10 +14,11 @@ import { HudScene } from "./scenes/HudScene";
 import { ResultScene } from "./scenes/ResultScene";
 
 const game = new Phaser.Game({
-  type: Phaser.AUTO,
+  // WebGL is required: lighting is a shader.
+  type: Phaser.WEBGL,
   parent: "gameContainer",
-  width: CANVAS_W,
-  height: CANVAS_H,
+  width: CANVAS_W * RES,
+  height: CANVAS_H * RES,
   backgroundColor: "#000000",
   physics: {
     default: "arcade",
