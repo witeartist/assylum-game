@@ -28,7 +28,7 @@ export interface Minigame {
   feedback: "ok" | "bad" | null;
 }
 
-const TERMINAL_WIDTH = TILE * 0.75;
+const TERMINAL_WIDTH = TILE * 0.62;
 
 export class Doors {
   readonly doors: DoorState[];
@@ -113,6 +113,7 @@ export class Doors {
     d.open = true;
     for (const t of d.data.doorTiles) {
       w.grid.setSolid(t, false);
+      w.sight.setSolid(t, false);
       w.collision.open(t);
     }
     w.toast("ДВЕРЬ ОТКРЫТА!" + (by ? " — " + by : ""), "terminal");

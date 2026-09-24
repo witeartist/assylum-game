@@ -23,7 +23,7 @@ export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipe
   /** Brightness of remembered (explored, out of sight) floor. */
   memory = 0.13;
   /** Brightness of wall tops. */
-  topLight = 0.35;
+  topLight = 0.3;
   private occ: Phaser.Renderer.WebGL.Wrappers.WebGLTextureWrapper | null = null;
   private vis: Phaser.Renderer.WebGL.Wrappers.WebGLTextureWrapper | null = null;
   private occPixels = new Uint8Array(MAP_W * MAP_H * 4);
@@ -56,11 +56,11 @@ export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipe
 
   private upload(w: World): void {
     const gl = this.gl;
-    if (w.grid.version !== this.occVersion) {
-      const s = w.grid.solid;
-      for (let i = 0; i < s.length; i++) { this.occPixels[i * 4] = s[i] * 255; this.occPixels[i * 4 + 3] = 255; }
+    if (w.sight.version !== this.occVersion) {
+      const s = w.sight.solid;
+      for (let i = 0; i < s.length; i++) { this.occPixels[i * 4] = s[i] ? (w.doorish.has(i) ? 153 : 255) : 0; this.occPixels[i * 4 + 3] = 255; }
       this.occ!.update(this.occPixels, MAP_W, MAP_H, false, gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.NEAREST, gl.NEAREST, gl.RGBA);
-      this.occVersion = w.grid.version;
+      this.occVersion = w.sight.version;
     }
     const v = w.vision;
     if (v.version !== this.visVersion) {

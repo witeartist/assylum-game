@@ -14,7 +14,7 @@ export interface HideSpot extends Vec2 {
   sprite: Phaser.GameObjects.Image;
 }
 
-const LOCKER_WIDTH = TILE * 0.85;
+const LOCKER_WIDTH = TILE * 0.62;
 
 export class Hiding {
   readonly spots: HideSpot[] = [];
@@ -23,16 +23,15 @@ export class Hiding {
     const scene = world.scene;
     for (const t of world.level.hidingSpots) {
       const p = tileCenter(t);
-      const sprite = placeStanding(scene, "interactive/locker_closed", p.x, p.y + TILE * 0.45, LOCKER_WIDTH);
+      const sprite = placeStanding(scene, "interactive/locker_closed", p.x, p.y + TILE * 0.2, LOCKER_WIDTH);
       this.spots.push({ x: p.x, y: p.y, kind: "locker", sprite });
     }
     for (const bed of world.level.bedSpots) {
       const a = tileCenter(bed.tile), b = tileCenter(bed.tile2);
       const p = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const sprite = scene.add.image(p.x, p.y, bed.sprite);
-      // Beds span two tiles along their orientation and sort by their foot end.
-      sprite.setScale(bed.orientation === "vertical" ? TILE * 2 / sprite.height : TILE * 2 / sprite.width);
-      sprite.setDepth(p.y + sprite.displayHeight / 2);
+      // Beds cover their two tiles; the picture rises above the footprint like any 3/4 object.
+      const width = (bed.orientation === "vertical" ? 1 : 2) * TILE * 0.95;
+      const sprite = placeStanding(scene, bed.sprite, p.x, (Math.max(bed.tile.row, bed.tile2.row) + 1) * TILE - 1, width);
       this.spots.push({ x: p.x, y: p.y, kind: "bed", sprite });
     }
   }

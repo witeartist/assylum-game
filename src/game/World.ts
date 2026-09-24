@@ -8,7 +8,7 @@ import type { RunnerStatus, Vec2 } from "../core/types";
 import type { Difficulty } from "../data/difficulty";
 import type { Tone } from "../ui/theme";
 import { WalkGrid } from "../world/grid";
-import { buildRoomLookup, type LevelData, type Room } from "../world/level";
+import { blockingFurnitureTiles, buildRoomLookup, type LevelData, type Room } from "../world/level";
 import type { Actor } from "../entities/Actor";
 import type { CollisionLayer } from "../world/collision";
 import type { Objectives } from "../systems/objectives";
@@ -44,7 +44,12 @@ export interface GameEvents {
 
 export class World {
   readonly events = new EventBus<GameEvents>();
+  /** Where actors can walk: walls, closed doors and solid furniture block. */
   readonly grid: WalkGrid;
+  /** What blocks sight and light: walls and closed doors (you can see over a bed). */
+  readonly sight: WalkGrid;
+  /** Solid tiles drawn as doors (locked doors, the exit): lit like a wall front, not a wall top. */
+  readonly doorish = new Set<number>();
   readonly rng: Rng;
   readonly actors: Actor[] = [];
   private readonly roomLookup: Int16Array;
@@ -68,8 +73,11 @@ export class World {
     readonly diff: Difficulty,
     readonly net: NetMode,
   ) {
-    this.grid = WalkGrid.fromRows(level.rows);
-    for (const d of level.lockedDoors) for (const t of d.doorTiles) this.grid.setSolid(t, true);
+    this.sight = WalkGrid.fromRows(level.rows).withSolid(level.lockedDoors.flatMap(d => d.doorTiles));
+    this.grid = this.sight.withSolid(blockingFurnitureTiles(level));
+    for (const d of level.lockedDoors) for (const t of d.doorTiles) this.doorish.add(tileIndex(t.col, t.row));
+    const e = level.exitTile;
+    for (const c of [e.col, e.col + 1]) this.doorish.add(tileIndex(c, e.row - 1));
     this.roomLookup = buildRoomLookup(level.rooms);
     this.rng = new Rng(level.seed ^ 0x5bd1e995);
   }

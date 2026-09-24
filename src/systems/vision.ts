@@ -32,7 +32,7 @@ export class Vision {
     const t = worldToTile(this.viewer);
     const idx = tileIndex(t.col, t.row);
     if (idx !== this.lastIdx) {
-      computeVisibility(w.grid, t.col, t.row, this.radius, this.mask);
+      computeVisibility(w.sight, t.col, t.row, this.radius, this.mask);
       for (let i = 0; i < this.mask.length; i++) if (this.mask[i]) this.explored[i] = 1;
       this.lastIdx = idx;
       this.version++;

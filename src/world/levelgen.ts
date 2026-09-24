@@ -5,10 +5,11 @@ import { manhattan, tileIndex } from "../core/geom";
 import { Rng } from "../core/rng";
 import type { Tile } from "../core/types";
 import { ROOM_TYPES, BED_SPRITES } from "../data/rooms";
+import { placeFurniture } from "./furnish";
 import { WalkGrid, distanceMap, distanceTo } from "./grid";
 import {
-  roomCenter, roomInteriorTiles, rectContains,
-  type Rect, type Room, type Decoration, type LockedDoor, type BedSpot, type LampSource, type LevelData,
+  roomCenter, roomInteriorTiles, rectContains, findRoomEntryTiles,
+  type Rect, type Room, type LockedDoor, type BedSpot, type LampSource, type LevelData,
 } from "./level";
 
 const MAX_ATTEMPTS = 30;
@@ -92,50 +93,23 @@ function paintBlood(rng: Rng, grid: CharGrid, rooms: Room[], blocked: Set<number
   for (const t of paintable.slice(0, BLOOD_TILES)) grid[t.row][t.col] = "B";
 }
 
-function buildRoomDecorations(rng: Rng, rooms: Room[], blocked: Set<number>): Decoration[] {
-  const decorations: Decoration[] = [];
-  const used = new Set<number>();
-  for (const room of rooms) {
-    if (room.type === "ward") continue; // wards get beds (placeBedSpots)
-    const interior = roomInteriorTiles(room);
-    const desired = Math.max(1, Math.min(3, Math.floor(interior.length / 10)));
-    let placed = 0;
-    for (const t of rng.shuffle(interior).filter(t => !blocked.has(key(t)))) {
-      if (placed >= desired) break;
-      if (used.has(key(t))) continue;
-      used.add(key(t));
-      decorations.push({ tile: t, room: room.type });
-      placed++;
-    }
-  }
-  return decorations;
-}
-
-function placeHidingSpots(rng: Rng, rooms: Room[], blocked: Set<number>): Tile[] {
+/** Lockers stand against a wall — the north wall if possible — and never in a doorway. */
+function placeHidingSpots(rng: Rng, rooms: Room[], blocked: Set<number>, grid: CharGrid): Tile[] {
   const spots: Tile[] = [];
   for (const room of rooms) {
     if (room.type === "ward") continue; // wards hide under beds
     if (rng.next() > 0.6) continue;     // ~60% of other rooms get a locker
-    const t = rng.shuffle(roomInteriorTiles(room)).find(t => !blocked.has(key(t)));
+    const nearEntry = new Set<number>();
+    for (const e of findRoomEntryTiles(grid, room))
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) nearEntry.add(tileIndex(e.col + dc, e.row + dr));
+    const ok = (t: Tile) => !blocked.has(key(t)) && !nearEntry.has(key(t));
+    const inner = roomInteriorTiles(room);
+    const north = inner.filter(t => t.row === room.y + 1 && grid[room.y][t.col] === "#");
+    const sides = inner.filter(t => (t.col === room.x + 1 && grid[t.row][room.x] === "#") || (t.col === room.x + room.w - 2 && grid[t.row][room.x + room.w - 1] === "#"));
+    const t = rng.shuffle(north).find(ok) ?? rng.shuffle(sides).find(ok);
     if (t) { blocked.add(key(t)); spots.push(t); }
   }
   return spots;
-}
-
-function findRoomEntryTiles(grid: CharGrid, room: Room): Tile[] {
-  const entries: Tile[] = [];
-  const open = (r: number, c: number) => r >= 0 && r < MAP_H && c >= 0 && c < MAP_W && grid[r][c] !== "#";
-  for (let c = room.x + 1; c < room.x + room.w - 1; c++) {
-    if (open(room.y, c) && open(room.y - 1, c)) entries.push({ col: c, row: room.y });
-    const botY = room.y + room.h - 1;
-    if (open(botY, c) && open(botY + 1, c)) entries.push({ col: c, row: botY });
-  }
-  for (let r = room.y + 1; r < room.y + room.h - 1; r++) {
-    if (open(r, room.x) && open(r, room.x - 1)) entries.push({ col: room.x, row: r });
-    const rightX = room.x + room.w - 1;
-    if (open(r, rightX) && open(r, rightX + 1)) entries.push({ col: rightX, row: r });
-  }
-  return entries;
 }
 
 function placeBedSpots(rng: Rng, rooms: Room[], blocked: Set<number>, grid: CharGrid): BedSpot[] {
@@ -184,21 +158,38 @@ function placeBedSpots(rng: Rng, rooms: Room[], blocked: Set<number>, grid: Char
   return beds;
 }
 
-function placeLights(rng: Rng, rooms: Room[], corridorRows: number[]): LampSource[] {
+/** Lamps hang on north walls: half the rooms and some corridor stretches are lit. */
+function placeLights(rng: Rng, grid: CharGrid, rooms: Room[], corridorRows: number[]): LampSource[] {
   const lights: LampSource[] = [];
   for (const room of rooms) {
-    if (rng.next() > 0.5) {
-      const rc = roomCenter(room);
-      lights.push({ col: rc.col, row: rc.row, radius: Math.max(room.w, room.h) * 0.6, intensity: 0.8 });
-    }
+    if (rng.next() > 0.5) continue;
+    // The wall column closest to the middle of the north wall.
+    const mid = roomCenter(room).col;
+    const cols = Array.from({ length: room.w - 2 }, (_, i) => room.x + 1 + i)
+      .filter(c => grid[room.y][c] === "#")
+      .sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+    if (cols.length === 0) continue;
+    lights.push({ col: cols[0], row: room.y + 1, radius: Math.max(room.w, room.h) * 0.8, intensity: 0.8 });
   }
   for (const cr of corridorRows) {
     for (let c = 3; c < MAP_W - 3; c += rng.int(6, 12)) {
-      if (rng.next() > 0.4) continue;
-      lights.push({ col: c, row: cr, radius: 4, intensity: 0.6 });
+      if (rng.next() > 0.4 || grid[cr - 1][c] !== "#" || grid[cr][c] === "#") continue;
+      lights.push({ col: c, row: cr, radius: 4.5, intensity: 0.6 });
     }
   }
   return lights;
+}
+
+/** Where the exit's double door goes: two tiles along the room's north wall, under solid wall. */
+function exitSpot(rng: Rng, grid: CharGrid, room: Rect, used: Set<number>): Tile | null {
+  const row = room.y + 1, cols: number[] = [];
+  for (let c = room.x + 1; c + 1 <= room.x + room.w - 2; c++) {
+    if (grid[room.y][c] === "#" && grid[room.y][c + 1] === "#" && !used.has(tileIndex(c, row)) && !used.has(tileIndex(c + 1, row))) cols.push(c);
+  }
+  if (cols.length === 0) return null;
+  const t = { col: rng.pick(cols), row };
+  used.add(key(t)); used.add(tileIndex(t.col + 1, row));
+  return t;
 }
 
 /** Room ring tiles that open onto walkable tiles outside the room (doorways). */
@@ -273,22 +264,24 @@ function pickLockedDoors(
   return locked;
 }
 
-/** Furniture, hiding spots, lights and blood — shared by the generator and the fallback. */
+/** Hiding spots, lights, blood and furniture — shared by the generator and the fallback. */
 function furnish(
   rng: Rng, seed: number, grid: CharGrid, rooms: Room[], corridorRows: number[], used: Set<number>,
   spawns: Pick<LevelData, "playerSpawn" | "foxSpawn" | "npcSpawns" | "exitTile" | "bossSpawn" | "keyTiles" | "lockedDoors">,
   startRoom: Room,
 ): LevelData {
-  const decorations = buildRoomDecorations(rng, rooms, used);
-  const hidingSpots = placeHidingSpots(rng, rooms, used);
+  const hidingSpots = placeHidingSpots(rng, rooms, used, grid);
   const bedSpots = placeBedSpots(rng, rooms, used, grid);
   const doors = findDoorTiles(grid, rooms);
-  const lights = placeLights(rng, rooms, corridorRows);
+  const lights = placeLights(rng, grid, rooms, corridorRows);
   paintBlood(rng, grid, rooms, used);
-  return {
+  const level: LevelData = {
     seed, rows: grid.map(r => r.join("")), rooms, ...spawns,
-    decorations, hidingSpots, bedSpots, doors, lights, startRoom: startRoom.type,
+    furniture: [], hidingSpots, bedSpots, doors, lights, startRoom: startRoom.type,
   };
+  // Furniture has its own random stream, so tuning it never changes the rest of the layout.
+  level.furniture = placeFurniture(new Rng(seed ^ 0xf00d), level, used);
+  return level;
 }
 
 export function generateLevel(seed: number, keyCount: number): LevelData {
@@ -331,8 +324,12 @@ export function generateLevel(seed: number, keyCount: number): LevelData {
     const npcRooms = otherRooms.slice(0, 4);
     const npcSpawns = npcRooms.map(r => pickRoomTile(rng, r, used));
 
-    const exitRoom = otherRooms.filter(r => !npcRooms.includes(r)).sort(farFromPlayer)[0];
-    const exitTile = pickRoomTile(rng, exitRoom, used);
+    let exitRoom: Room | null = null, exitTile: Tile | null = null;
+    for (const r of otherRooms.filter(r => !npcRooms.includes(r)).sort(farFromPlayer)) {
+      exitTile = exitSpot(rng, grid, r, used);
+      if (exitTile) { exitRoom = r; break; }
+    }
+    if (!exitRoom || !exitTile) continue;
 
     const exitCenter = roomCenter(exitRoom);
     const bossRoom = rooms
@@ -380,7 +377,7 @@ export function generateFallbackLevel(seed: number, keyCount: number): LevelData
   const playerSpawn = pickRoomTile(rng, rooms[0], used);
   const foxSpawn = pickRoomTile(rng, rooms[rooms.length - 1], used);
   const npcSpawns = [rooms[2], rooms[5], rooms[9], rooms[16]].map(r => pickRoomTile(rng, r, used));
-  const exitTile = pickRoomTile(rng, rooms[18], used);
+  const exitTile = exitSpot(rng, grid, rooms[18], used) ?? pickRoomTile(rng, rooms[18], used);
   const bossSpawn = pickRoomTile(rng, rooms[14], used);
   // Rooms not used by spawns/exit, in preferred order; the level needs exactly keyCount keys.
   const keyRooms = [3, 7, 11, 15, 20, 1, 4, 6, 8, 10, 12, 13, 17, 19, 21].slice(0, keyCount).map(i => rooms[i]);

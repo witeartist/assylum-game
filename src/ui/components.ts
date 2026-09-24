@@ -143,14 +143,49 @@ export function slider(scene: Scene, x: number, y: number, w: number, value: num
   });
 }
 
-/** Lay out texts left to right from x with a fixed gap (widths are measured, so no overlaps). */
-export function hstack(texts: Phaser.GameObjects.Text[], x: number, gap: number): void {
+/** Anything hstack can lay out. */
+export interface Stackable { readonly visible: boolean; readonly width: number; setX(x: number): unknown; }
+
+/** Lay out items left to right from x with a fixed gap (widths are measured, so no overlaps). */
+export function hstack(items: Stackable[], x: number, gap: number): void {
   let cx = x;
-  for (const t of texts) {
-    if (!t.visible || t.text === "") continue;
+  for (const t of items) {
+    if (!t.visible || t.width === 0) continue;
     t.setX(cx);
     cx += t.width + gap;
   }
+}
+
+/** An icon from ui/ followed by a text, e.g. the key counter. Origin: left, vertically centred. */
+export class IconText implements Stackable {
+  readonly icon: Phaser.GameObjects.Image;
+  readonly text: Phaser.GameObjects.Text;
+  private readonly gap = 6;
+
+  constructor(scene: Scene, x: number, y: number, icon: string | null, text: string, kind: TextKind, ink: string, private size = 18) {
+    this.icon = scene.add.image(x, y, icon ?? "__DEFAULT").setOrigin(0, 0.5).setVisible(!!icon);
+    this.text = label(scene, x, y, text, kind, ink, { origin: [0, 0.5] });
+    this.setIcon(icon);
+  }
+
+  get visible(): boolean { return this.text.visible; }
+  get width(): number { return this.text.text === "" ? 0 : this.iconWidth + this.text.width; }
+  private get iconWidth(): number { return this.icon.visible ? this.icon.displayWidth + this.gap : 0; }
+
+  setIcon(key: string | null): this {
+    if (key) {
+      this.icon.setTexture(key).setVisible(true);
+      this.icon.setScale(this.size / Math.max(this.icon.width, this.icon.height));
+    } else {
+      this.icon.setVisible(false);
+    }
+    return this.setX(this.icon.x);
+  }
+
+  setText(t: string): this { this.text.setText(t); this.icon.setVisible(this.icon.visible && t !== ""); return this; }
+  setColor(ink: string): this { this.text.setColor(ink); this.icon.setTint(Phaser.Display.Color.HexStringToColor(ink).color); return this; }
+  setX(x: number): this { this.icon.setX(x); this.text.setX(x + this.iconWidth); return this; }
+  setVisible(on: boolean): this { this.text.setVisible(on); this.icon.setVisible(on); return this; }
 }
 
 /** Short messages in the middle of the screen; several stack instead of overlapping. */

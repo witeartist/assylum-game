@@ -2,12 +2,12 @@
 import type Phaser from "phaser";
 import { TILE } from "../core/constants";
 import { dist, tileCenter } from "../core/geom";
-import type { Tile } from "../core/types";
+import type { Tile, Vec2 } from "../core/types";
 import { EXIT_RADIUS, PICKUP_RADIUS } from "../data/balance";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import type { GoalCandidate } from "../ai/goals";
-import { DEPTH } from "../ui/theme";
+import { placeStanding } from "../render/worldView";
 
 interface KeyPickup {
   tile: Tile;
@@ -17,8 +17,8 @@ interface KeyPickup {
   taken: boolean;
 }
 
-const KEY_SIZE = TILE * 0.7;
-const EXIT_SIZE = TILE * 1.3;
+const KEY_SIZE = TILE * 0.6;
+const EXIT_WIDTH = TILE * 1.9;
 const BOB_SPEED = 3;
 const BOB_HEIGHT = 3;
 
@@ -26,7 +26,8 @@ export class Objectives {
   readonly keys: KeyPickup[];
   readonly total: number;
   collected = 0;
-  readonly exit: { tile: Tile; sprite: Phaser.GameObjects.Image; open: boolean };
+  /** The exit: a double door in the north wall over `tile` and the tile to its right. */
+  readonly exit: { tile: Tile; point: Vec2; sprite: Phaser.GameObjects.Image; open: boolean };
 
   constructor(private world: World) {
     const scene = world.scene;
@@ -37,10 +38,12 @@ export class Objectives {
       return { tile, sprite, baseY: p.y, bob: world.rng.range(0, Math.PI * 2), taken: false };
     });
     this.total = this.keys.length;
-    const ep = tileCenter(world.level.exitTile);
+    const et = world.level.exitTile;
+    const doorX = (et.col + 1) * TILE;
     this.exit = {
-      tile: world.level.exitTile,
-      sprite: scene.add.image(ep.x, ep.y, "interactive/exit_closed").setDisplaySize(EXIT_SIZE, EXIT_SIZE).setDepth(DEPTH.floorObjects),
+      tile: et,
+      point: { x: doorX, y: et.row * TILE + TILE / 2 },
+      sprite: placeStanding(scene, "interactive/exit_door_closed", doorX, et.row * TILE, EXIT_WIDTH),
       open: false,
     };
   }
@@ -57,7 +60,7 @@ export class Objectives {
       this.keys.forEach((k, i) => {
         if (!k.taken && dist(r, { x: k.sprite.x, y: k.baseY }) < PICKUP_RADIUS) this.collectKey(i, r);
       });
-      if (this.exit.open && r.inPlay && dist(r, this.exit.sprite) < EXIT_RADIUS) this.world.round.escape(r);
+      if (this.exit.open && r.inPlay && dist(r, this.exit.point) < EXIT_RADIUS) this.world.round.escape(r);
     }
   }
 
@@ -74,7 +77,9 @@ export class Objectives {
     w.events.emit("keyCollected", { index, by: byName, local, remote });
     if (this.collected >= this.total) {
       this.exit.open = true;
-      this.exit.sprite.setTexture("interactive/exit_open").setDisplaySize(EXIT_SIZE, EXIT_SIZE);
+      const sprite = this.exit.sprite;
+      sprite.setTexture("interactive/exit_door_open");
+      sprite.setScale(EXIT_WIDTH / sprite.width);
       w.toast("ВЫХОД ОТКРЫТ! БЕГИ!", "good");
       w.events.emit("exitOpened", {});
     } else {

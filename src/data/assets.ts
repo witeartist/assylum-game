@@ -22,9 +22,9 @@ export const IMAGES: ImageAsset[] = [
   { key: "char.Foxmind", url: "Sprite/Foxmind.png", trim: true, fallback: "#e84040" },
   { key: "char.Jeloch",  url: "Sprite/jeloch.png",  trim: true, fallback: "#5ec45e" },
   { key: "ui/menu_art",  url: "Sprite/arts/main menu.jpg" },
+  // Older hand-drawn beds, used only if generated ones are missing.
   { key: "props/bed_v_1", url: "Sprite/interior/bed_vertical.png",          trim: true, fallback: "#5f6878" },
   { key: "props/bed_v_2", url: "Sprite/interior/bed_vertical_type_2.png",   trim: true, fallback: "#5f6878" },
-  { key: "props/bed_v_3", url: "Sprite/interior/bed_vertical_type_3.png",   trim: true, fallback: "#5f6878" },
   { key: "props/bed_h_1", url: "Sprite/interior/bed_horizontal_type_1.png", trim: true, fallback: "#5f6878" },
 ];
 
@@ -33,6 +33,10 @@ export const GENERATED_INDEX = "assets/manifest.json";
 
 /** One repetition of a generated surface texture spans this many tiles (so its pattern never lines up with the grid). */
 export const GENERATED_SURFACE_TILES = 6;
+/** Per-surface exceptions (the wall front is a short strip, so it repeats more often). */
+export const GENERATED_SURFACE_TILES_BY_KEY: Record<string, number> = {
+  "surfaces/wall_face": 3,
+};
 
 export const MUSIC = {
   main: "sound/Asylum%20Echoes.mp3",

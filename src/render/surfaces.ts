@@ -251,27 +251,25 @@ function blob(size: number, rng: Rng, color: RGB, alpha: number, roughness: numb
 }
 
 export interface DecalSpec {
-  /** Size in tiles when drawn at scale 1. */
-  tiles: number;
   draw: () => HTMLCanvasElement;
 }
 
 const BLOOD: RGB = [92, 10, 8];
 
 export const DECALS: Record<string, DecalSpec> = {
-  "decals/blood_pool_1":     { tiles: 1.6, draw: () => blob(128, new Rng(31), BLOOD, 0.92, 0.9, 6) },
-  "decals/blood_pool_2":     { tiles: 1.3, draw: () => blob(128, new Rng(32), BLOOD, 0.9, 1.2, 10) },
-  "decals/blood_splatter_1": { tiles: 1.4, draw: () => blob(128, new Rng(33), BLOOD, 0.85, 2.2, 24) },
-  "decals/blood_splatter_2": { tiles: 1.2, draw: () => blob(128, new Rng(34), BLOOD, 0.8, 2.6, 30) },
-  "decals/dirt_1":           { tiles: 2.2, draw: () => blob(128, new Rng(35), [38, 32, 24], 0.45, 1.4) },
-  "decals/dirt_2":           { tiles: 1.8, draw: () => blob(128, new Rng(36), [30, 30, 26], 0.4, 1.8) },
-  "decals/puddle_1":         { tiles: 1.8, draw: () => blob(128, new Rng(37), [16, 22, 26], 0.7, 0.8) },
-  "decals/cracks_1": { tiles: 1.6, draw: () => {
+  "decals/blood_pool_1":     { draw: () => blob(128, new Rng(31), BLOOD, 0.92, 0.9, 6) },
+  "decals/blood_pool_2":     { draw: () => blob(128, new Rng(32), BLOOD, 0.9, 1.2, 10) },
+  "decals/blood_splatter_1": { draw: () => blob(128, new Rng(33), BLOOD, 0.85, 2.2, 24) },
+  "decals/blood_splatter_2": { draw: () => blob(128, new Rng(34), BLOOD, 0.8, 2.6, 30) },
+  "decals/dirt_1":           { draw: () => blob(128, new Rng(35), [38, 32, 24], 0.45, 1.4) },
+  "decals/dirt_2":           { draw: () => blob(128, new Rng(36), [30, 30, 26], 0.4, 1.8) },
+  "decals/puddle_1":         { draw: () => blob(128, new Rng(37), [16, 22, 26], 0.7, 0.8) },
+  "decals/cracks_1": { draw: () => {
     const [c, ctx] = canvas(128, 128);
     cracks(ctx, 128, new Rng(38), 5, "rgba(8,8,8,0.8)");
     return c;
   } },
-  "decals/papers": { tiles: 1.2, draw: () => {
+  "decals/papers": { draw: () => {
     const [c, ctx] = canvas(128, 128);
     const rng = new Rng(39);
     for (let i = 0; i < 5; i++) {

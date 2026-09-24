@@ -61,9 +61,9 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     w.camera = new CameraRig(this.cameras.main);
 
+    w.lighting = new Lighting(w);
     new WorldView(w);
     w.collision = new CollisionLayer(this, w.grid);
-    w.lighting = new Lighting(w);
     w.hiding = new Hiding(w);
     w.doors = new Doors(w);
     w.objectives = new Objectives(w);

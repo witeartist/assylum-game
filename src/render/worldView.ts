@@ -8,12 +8,13 @@ import Phaser from "phaser";
 import { MAP_W, MAP_H, TILE, WALL_HEIGHT } from "../core/constants";
 import { tileCenter, tileIndex } from "../core/geom";
 import { Rng } from "../core/rng";
-import { GENERATED_SURFACE_TILES } from "../data/assets";
-import { CORRIDOR_FLOOR, DECAL_DENSITY, DECAL_KEYS, ROOMS, WALL_FACE, WALL_TOP, type DecalKind } from "../data/rooms";
+import { GENERATED_SURFACE_TILES, GENERATED_SURFACE_TILES_BY_KEY } from "../data/assets";
+import { CORRIDOR_FLOOR, DECAL_DENSITY, DECAL_KEYS, DECAL_TILES, ROOMS, WALL_FACE, WALL_TOP, type DecalKind } from "../data/rooms";
+import { LAMP_ART } from "../data/furniture";
 import type { World } from "../game/World";
 import { buildRoomLookup } from "../world/level";
 import { DEPTH } from "../ui/theme";
-import { DECALS, SURFACES, WALL_FACE_ART } from "./surfaces";
+import { SURFACES, WALL_FACE_ART } from "./surfaces";
 import { isPlaceholder } from "./textures";
 
 /** Chunk side in world px: few draw calls, a texture size every GPU supports. */
@@ -22,6 +23,7 @@ const H = WALL_HEIGHT;
 const AO_RES = 8;      // AO texels per tile
 const AO_RADIUS = 3;   // blur radius, AO texels
 const AO_STRENGTH = 0.55;
+const CAP_TINT = 0x6a6a6a;
 
 interface Stamp {
   key: string;
@@ -37,7 +39,7 @@ interface Stamp {
 
 /** Repetition period of a surface texture in world px. */
 function surfacePeriod(key: string): number {
-  if (!isPlaceholder(key)) return GENERATED_SURFACE_TILES * TILE;
+  if (!isPlaceholder(key)) return (GENERATED_SURFACE_TILES_BY_KEY[key] ?? GENERATED_SURFACE_TILES) * TILE;
   return (SURFACES[key]?.tilesAcross ?? WALL_FACE_ART.tilesAcross) * TILE;
 }
 
@@ -152,8 +154,8 @@ export class WorldView {
     const decal = (kind: DecalKind, c: number, r: number, scaleMul = 1) => {
       const key = vrng.pick(DECAL_KEYS[kind]);
       const tex = scene.textures.get(key).getSourceImage();
-      const tiles = DECALS[key]?.tiles ?? 1.5;
-      const s = tiles * TILE / tex.width * vrng.range(0.7, 1.25) * scaleMul;
+      const tiles = DECAL_TILES[key] ?? 1.5;
+      const s = tiles * TILE / Math.max(tex.width, tex.height) * vrng.range(0.75, 1.2) * scaleMul;
       const p = tileCenter({ col: c, row: r });
       floor.push(stampImage(key, p.x + vrng.range(-10, 10), p.y + vrng.range(-10, 10), s, vrng.range(0, Math.PI * 2), vrng.range(0.75, 1), tex.width * s * 0.75));
     };
@@ -183,12 +185,12 @@ export class WorldView {
     for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
       if (solid(c, r) && nearFloor(c, r)) caps.push(surfaceStamp(scene, WALL_TOP, c * TILE, r * TILE - H, TILE, TILE, r * TILE));
     }
-    bake(scene, caps, DEPTH.caps);
+    // Wall tops are darker than any floor, so walls read as solid masses.
+    bake(scene, caps, DEPTH.caps).forEach(rt => rt.setTint(CAP_TINT));
     this.drawCapEdges(solid);
 
-    for (const dec of level.decorations) {
-      const p = tileCenter(dec.tile);
-      placeStanding(scene, ROOMS[dec.room].prop, p.x, p.y + TILE * 0.4, TILE * 0.8 * ROOMS[dec.room].propScale / 1.35);
+    for (const f of level.furniture) {
+      placeStanding(scene, f.key, (f.col + f.w / 2) * TILE, (f.row + f.h) * TILE - 1, f.w * TILE * 0.96);
     }
     this.buildDoors();
     this.buildLamps();
@@ -201,7 +203,7 @@ export class WorldView {
     for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
       if (!solid(c, r)) continue;
       const x = c * TILE, y = r * TILE - H;
-      if (!solid(c, r + 1)) { g.fillStyle(0x8a948f, 0.55); g.fillRect(x, y + TILE - 1.5, TILE, 1.5); }
+      if (!solid(c, r + 1)) { g.fillStyle(0xa3aca8, 0.7); g.fillRect(x, y + TILE - 2, TILE, 2); }
       g.fillStyle(0x050606, 0.9);
       if (!solid(c, r - 1)) g.fillRect(x, y, TILE, 1);
       if (!solid(c - 1, r)) g.fillRect(x, y, 1, TILE + (solid(c, r + 1) ? 0 : H));
@@ -209,31 +211,29 @@ export class WorldView {
     }
   }
 
-  /** Locked doors look like wall segments with a hazard-striped top and a metal front. */
+  /** Locked doors: a metal door standing in the doorway (front view in horizontal walls, edge-on in vertical ones). */
   private buildDoors(): void {
     const { scene, level } = this.world;
     const isDoor = new Set(level.lockedDoors.flatMap(d => d.doorTiles.map(t => tileIndex(t.col, t.row))));
     const walkable = (c: number, r: number) => r >= 0 && r < MAP_H && level.rows[r][c] !== "#" && !isDoor.has(tileIndex(c, r));
     this.doorParts = level.lockedDoors.map(d => d.doorTiles.flatMap(t => {
-      const x = t.col * TILE, y = t.row * TILE;
-      const top = scene.add.image(x, y - H, "interactive/door_top").setOrigin(0).setDepth(DEPTH.caps + 2);
-      top.setDisplaySize(TILE, TILE);
-      const parts = [top];
-      if (walkable(t.col, t.row + 1)) {
-        const face = scene.add.image(x, y + TILE - H, "interactive/door_face").setOrigin(0).setDepth(DEPTH.floor + 1);
-        face.setDisplaySize(TILE, H);
-        parts.push(face);
-      }
-      return parts;
+      const x = t.col * TILE, base = (t.row + 1) * TILE;
+      const inHorizontalWall = walkable(t.col, t.row - 1) || walkable(t.col, t.row + 1);
+      const backing = scene.add.image(x, t.row * TILE - H, WALL_TOP).setOrigin(0).setDepth(base - 1).setTint(0x444444);
+      backing.setDisplaySize(TILE, TILE + H);
+      const door = placeStanding(scene, inHorizontalWall ? "interactive/door_metal_h" : "interactive/door_metal_v", x + TILE / 2, base, TILE * (inHorizontalWall ? 1.15 : 0.8));
+      return [backing, door];
     }));
   }
 
-  /** Ceiling fixtures above every lamp (their light comes from the lighting system). */
+  /** Lamp fixtures on the wall above each lamp. */
   private buildLamps(): void {
-    const scene = this.world.scene;
-    for (const lamp of this.world.level.lights) {
-      const p = tileCenter(lamp);
-      scene.add.image(p.x, p.y - H, "props/lamp_fixture").setDisplaySize(TILE * 1.4, TILE * 0.35).setDepth(DEPTH.ceiling).setAlpha(0.9);
+    const { scene, level } = this.world;
+    for (const lamp of this.world.lighting.lampsInfo()) {
+      const key = lamp.emergency ? LAMP_ART.emergency : lamp.flicker ? LAMP_ART.broken : LAMP_ART.normal;
+      const width = lamp.emergency ? TILE * 0.55 : TILE * 1.3;
+      const col = Math.floor(lamp.x / TILE), row = Math.floor(lamp.y / TILE);
+      if (row > 0 && level.rows[row - 1][col] === "#") placeStanding(scene, key, lamp.x, row * TILE - 1, width);
     }
   }
 }

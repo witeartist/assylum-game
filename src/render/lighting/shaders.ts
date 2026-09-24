@@ -18,7 +18,7 @@ ${PRECISION}
 #define MAX_STEPS ${MAX_STEPS}
 
 uniform sampler2D uMainSampler;
-uniform sampler2D uOcc;      // R: solid tile (nearest)
+uniform sampler2D uOcc;      // R: 1 wall, 0.6 door (solid, but lit like a wall front), 0 open (nearest)
 uniform sampler2D uVis;      // R: visible tile, G: explored tile (linear)
 uniform vec2 uMapSize;       // tiles
 uniform float uTile;         // world px per tile
@@ -60,7 +60,7 @@ float trace(vec2 a, vec2 b) {
     if (tMax.x < tMax.y) { cell.x += s.x; tMax.x += tDelta.x; }
     else { cell.y += s.y; tMax.y += tDelta.y; }
     if (cell.x == end.x && cell.y == end.y) return 1.0;
-    if (solidAt(cell) > 0.5) return 0.0;
+    if (solidAt(cell) > 0.3) return 0.0;
   }
   return 1.0;
 }
@@ -69,8 +69,10 @@ float trace(vec2 a, vec2 b) {
 float material(vec2 w, out vec2 g) {
   vec2 cell = floor(w / uTile);
   vec2 capCell = vec2(cell.x, floor((w.y + uWallH) / uTile));
-  if (solidAt(capCell) > 0.5) { g = (capCell + 0.5) * uTile; return 2.0; }
-  if (solidAt(cell) > 0.5) { g = vec2(w.x, (cell.y + 1.0) * uTile + 0.5); return 1.0; }
+  float cap = solidAt(capCell);
+  if (cap > 0.8) { g = (capCell + 0.5) * uTile; return 2.0; }
+  if (cap > 0.3) { g = vec2(w.x, (capCell.y + 1.0) * uTile + 0.5); return 1.0; }
+  if (solidAt(cell) > 0.3) { g = vec2(w.x, (cell.y + 1.0) * uTile + 0.5); return 1.0; }
   g = w;
   return 0.0;
 }

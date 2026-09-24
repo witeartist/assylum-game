@@ -49,7 +49,7 @@ export class Lighting {
           const level = lamp.intensity * (1 - d / lamp.radius);
           const i = tileIndex(col, row);
           if (level <= this.lampLevel[i]) continue;
-          if (!hasLineOfSight(world.grid, from, tileCenter({ col, row }))) continue;
+          if (!hasLineOfSight(world.sight, from, tileCenter({ col, row }))) continue;
           this.lampLevel[i] = level;
         }
       }
@@ -57,6 +57,11 @@ export class Lighting {
   }
 
   update(dt: number): void { this.t += dt; }
+
+  /** Lamp positions and kinds, for drawing fixtures. */
+  lampsInfo(): { x: number; y: number; emergency: boolean; flicker: boolean }[] {
+    return this.lamps.map(l => ({ x: l.x, y: l.y, emergency: l.emergency, flicker: l.flicker }));
+  }
 
   /** Global dimming this frame (flicker), 0..~0.1. */
   get flicker(): number {
@@ -111,7 +116,7 @@ export class Lighting {
     for (const d of w.doors.doors) if (!d.open) omni(d.terminal.x, d.terminal.y - 8, LIGHTS.terminal, LIGHTS.terminal.radius, 1 + 0.15 * Math.sin(this.t * 4));
     const exit = w.objectives.exit;
     const exitLook = exit.open ? LIGHTS.exitOpen : LIGHTS.exitLocked;
-    omni(exit.sprite.x, exit.sprite.y, exitLook, exitLook.radius, exit.open ? 1 + 0.2 * Math.sin(this.t * 3) : 1);
+    omni(exit.point.x, exit.point.y, exitLook, exitLook.radius, exit.open ? 1 + 0.2 * Math.sin(this.t * 3) : 1);
     for (const k of w.objectives.keys) if (!k.taken) omni(k.sprite.x, k.sprite.y, LIGHTS.key, LIGHTS.key.radius, 0.8 + 0.2 * Math.sin(this.t * 5 + k.bob));
 
     const cx = view.x + view.width / 2, cy = view.y + view.height / 2;
