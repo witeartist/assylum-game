@@ -92,6 +92,66 @@ export function findPath(grid: WalkGrid, start: Tile, goal: Tile): Tile[] {
 }
 
 /**
+ * Cheapest 4-way path where stepping onto tile i costs 1 + extra[i] (e.g. danger near a monster);
+ * same result format as findPath. Dijkstra over a binary heap.
+ */
+export function findPathWeighted(grid: WalkGrid, start: Tile, goal: Tile, extra: Float32Array): Tile[] {
+  const s = start.row * MAP_W + start.col, g = goal.row * MAP_W + goal.col;
+  if (s === g || grid.solid[g]) return [];
+  const cost = new Float32Array(N).fill(Infinity);
+  const parent = new Int32Array(N).fill(-1);
+  const heap: number[] = [];
+  const hc: number[] = [];
+  const push = (i: number, c: number) => {
+    heap.push(i); hc.push(c);
+    let k = heap.length - 1;
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (hc[p] <= hc[k]) break;
+      [heap[p], heap[k]] = [heap[k], heap[p]]; [hc[p], hc[k]] = [hc[k], hc[p]];
+      k = p;
+    }
+  };
+  const pop = (): number => {
+    const top = heap[0];
+    const li = heap.pop()!, lc = hc.pop()!;
+    if (heap.length > 0) {
+      heap[0] = li; hc[0] = lc;
+      let k = 0;
+      for (;;) {
+        const l = k * 2 + 1, r = l + 1;
+        let m = k;
+        if (l < heap.length && hc[l] < hc[m]) m = l;
+        if (r < heap.length && hc[r] < hc[m]) m = r;
+        if (m === k) break;
+        [heap[m], heap[k]] = [heap[k], heap[m]]; [hc[m], hc[k]] = [hc[k], hc[m]];
+        k = m;
+      }
+    }
+    return top;
+  };
+  cost[s] = 0;
+  parent[s] = s;
+  push(s, 0);
+  const solid = grid.solid;
+  while (heap.length) {
+    const cur = pop();
+    if (cur === g) break;
+    const c = cur % MAP_W;
+    const base = cost[cur];
+    for (const n of [c < MAP_W - 1 ? cur + 1 : -1, c > 0 ? cur - 1 : -1, cur + MAP_W < N ? cur + MAP_W : -1, cur - MAP_W]) {
+      if (n < 0 || solid[n]) continue;
+      const nc = base + 1 + extra[n];
+      if (nc < cost[n]) { cost[n] = nc; parent[n] = cur; push(n, nc); }
+    }
+  }
+  if (parent[g] < 0) return [];
+  const path: Tile[] = [];
+  for (let cur = g; cur !== s; cur = parent[cur]) path.push({ col: cur % MAP_W, row: Math.floor(cur / MAP_W) });
+  return path.reverse();
+}
+
+/**
  * Whether the straight segment a→b (world px) crosses no solid tile. Walks every tile the
  * segment touches (grid DDA); the tiles holding the two end points are not tested.
  */

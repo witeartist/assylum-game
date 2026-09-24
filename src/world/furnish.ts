@@ -1,6 +1,8 @@
-// Furniture placement. Pieces go along walls; every solid piece is checked so the level stays
-// winnable and has no cut-off corners: everything important stays reachable with the locked
-// doors shut, and every free floor tile stays reachable with them open.
+// Furniture placement. Each piece knows where it belongs — against the north wall, along any wall,
+// or in the middle of the room with space around it — and some bring a companion (a bench at a
+// canteen table). Every solid piece is checked so the level stays winnable and has no cut-off
+// corners: everything important stays reachable with the locked doors shut, and every free floor
+// tile stays reachable with them open.
 import { MAP_W, MAP_H } from "../core/constants";
 import { tileIndex } from "../core/geom";
 import type { Rng } from "../core/rng";
@@ -31,7 +33,8 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
   const doorTiles = level.lockedDoors.flatMap(d => d.doorTiles);
   const lookup = buildRoomLookup(level.rooms);
   const mustReachClosed: Tile[] = [
-    level.foxSpawn, level.bossSpawn, level.exitTile, ...level.npcSpawns,
+    level.foxSpawn, level.bossSpawn, level.exitTile, ...level.npcSpawns, ...level.fuseTiles,
+    ...(level.fuseBox ? [level.fuseBox] : []),
     ...level.lockedDoors.map(d => d.terminalTile),
     ...level.keyTiles.filter((_, i) => !level.lockedDoors.some(d => d.keyIndex === i)),
   ];
@@ -46,6 +49,7 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
   };
   for (const room of level.rooms) for (const e of findRoomEntryTiles(rows, room)) clearAround(e, 1);
   for (const t of doorTiles) clearAround(t, 1);
+  for (const g of level.gates) for (const t of g.tiles) clearAround(t, 1);
   for (const d of level.lockedDoors) clearAround(d.terminalTile, 1);
   for (const t of mustReachClosed) clearAround(t, 0);
 
@@ -54,11 +58,19 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
 
   const free = (tiles: Tile[]) => tiles.every(t =>
     !open.isSolid(t.col, t.row) && !taken.has(tileIndex(t.col, t.row)) && !keepClear.has(tileIndex(t.col, t.row)));
+  const wall = (c: number, r: number) => rows[r]?.[c] === "#";
+  const touchesWall = (tiles: Tile[]) => tiles.some(t => wall(t.col - 1, t.row) || wall(t.col + 1, t.row) || wall(t.col, t.row - 1) || wall(t.col, t.row + 1));
+  /** Stands where it belongs: backed by the north wall, touching a wall, or clear of walls. */
+  const fits = (def: FurnitureDef, tiles: Tile[]) =>
+    def.spot === "north" ? tiles.filter(t => t.row === tiles[0].row).every(t => wall(t.col, t.row - 1))
+      : def.spot === "wall" ? touchesWall(tiles)
+        : !touchesWall(tiles);
   /** No other solid piece right next to this one (keeps walkways between furniture). */
-  const spaced = (tiles: Tile[]) => tiles.every(t =>
+  const spaced = (tiles: Tile[], friends: Tile[] = []) => tiles.every(t =>
     [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dc, dr]) => {
       const n = { col: t.col + dc, row: t.row + dr };
-      return tiles.some(o => o.col === n.col && o.row === n.row) || open.isSolid(n.col, n.row) || !blocked.isSolid(n.col, n.row);
+      return tiles.some(o => o.col === n.col && o.row === n.row) || friends.some(o => o.col === n.col && o.row === n.row)
+        || open.isSolid(n.col, n.row) || !blocked.isSolid(n.col, n.row);
     }));
   const keepsLevelWhole = (tiles: Tile[]) => {
     const g = blocked.withSolid(tiles);
@@ -68,29 +80,43 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
     const dClosed = distanceMap(g.withSolid(doorTiles), level.playerSpawn);
     return mustReachClosed.every(t => distanceTo(dClosed, t) >= 0);
   };
-  const tryPlace = (def: FurnitureDef, col: number, row: number): boolean => {
+  const tryPlace = (def: FurnitureDef, col: number, row: number, friends: Tile[] = []): Tile[] | null => {
     const tiles = footprint(col, row, def);
-    if (!free(tiles)) return false;
-    if (def.solid && (!spaced(tiles) || !keepsLevelWhole(tiles))) return false;
+    if (!free(tiles) || (friends.length === 0 && !fits(def, tiles))) return null;
+    if (def.solid && (!spaced(tiles, friends) || !keepsLevelWhole(tiles))) return null;
     for (const t of tiles) {
       taken.add(tileIndex(t.col, t.row));
       if (def.solid) blocked.setSolid(t, true);
     }
     pieces.push({ key: def.key, col, row, w: def.w, h: def.h, solid: def.solid });
-    return true;
+    return tiles;
+  };
+  /** The companion piece right below (or beside) its parent. */
+  const placeCompanion = (parent: FurnitureDef, col: number, row: number, tiles: Tile[]) => {
+    const def = parent.with ? FURNITURE.find(d => d.key === parent.with) : undefined;
+    if (!def) return;
+    const spots: [number, number][] = def.w === parent.w
+      ? [[col, row + parent.h], [col, row - def.h]]
+      : [[col + parent.w, row], [col - def.w, row]];
+    for (const [c, r] of spots) if (tryPlace(def, c, r, tiles)) return;
   };
 
-  /** A spot for `def` inside `area`: against the north wall, or hugging any wall. */
+  /** A spot for `def` inside `area` according to where it belongs. */
   const spotIn = (def: FurnitureDef, area: Rect): [number, number] | null => {
     const maxCol = area.x + area.w - def.w, maxRow = area.y + area.h - def.h;
     if (maxCol < area.x || maxRow < area.y) return null;
-    if (def.againstWall) return [rng.int(area.x, maxCol), area.y];
-    switch (rng.int(0, 4)) {
-      case 0: return [rng.int(area.x, maxCol), area.y];
-      case 1: return [rng.int(area.x, maxCol), maxRow];
-      case 2: return [area.x, rng.int(area.y, maxRow)];
-      case 3: return [maxCol, rng.int(area.y, maxRow)];
-      default: return [rng.int(area.x, maxCol), rng.int(area.y, maxRow)];
+    switch (def.spot) {
+      case "north": return [rng.int(area.x, maxCol), area.y];
+      case "center":
+        if (maxCol - 1 < area.x + 1 || maxRow - 1 < area.y + 1) return null;
+        return [rng.int(area.x + 1, maxCol - 1), rng.int(area.y + 1, maxRow - 1)];
+      default:
+        switch (rng.int(0, 3)) {
+          case 0: return [rng.int(area.x, maxCol), area.y];
+          case 1: return [rng.int(area.x, maxCol), maxRow];
+          case 2: return [area.x, rng.int(area.y, maxRow)];
+          default: return [maxCol, rng.int(area.y, maxRow)];
+        }
     }
   };
 
@@ -101,7 +127,10 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
     for (let a = 0; a < want * ATTEMPTS_PER_PIECE && placed < want; a++) {
       const def = pickDef(rng, room.type);
       const spot = def && spotIn(def, inner);
-      if (def && spot && tryPlace(def, spot[0], spot[1])) placed++;
+      const tiles = def && spot && tryPlace(def, spot[0], spot[1]);
+      if (!def || !spot || !tiles) continue;
+      placed++;
+      placeCompanion(def, spot[0], spot[1], tiles);
     }
   }
 

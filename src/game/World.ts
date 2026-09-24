@@ -17,10 +17,17 @@ import type { Hiding } from "../systems/hiding";
 import type { Lighting } from "../systems/lighting";
 import type { FoxFlash } from "../systems/foxFlash";
 import type { Vision } from "../systems/vision";
-import type { Noise } from "../systems/noise";
+import type { Noise, NoiseKind } from "../systems/noise";
 import type { Director } from "../systems/director";
 import type { Round } from "../systems/round";
+import type { Vitals } from "../systems/vitals";
+import type { Items } from "../systems/items";
+import type { Power } from "../systems/power";
+import type { Interact } from "../systems/interact";
+import type { Gates } from "../systems/gates";
+import type { Scent } from "../ai/scent";
 import type { CameraRig } from "../render/cameraRig";
+import type { ItemKind } from "../data/items";
 
 /** solo = everything local; host = authoritative peer; client = follows the host. */
 export type NetMode = "solo" | "host" | "client";
@@ -33,6 +40,20 @@ export interface GameEvents {
   runnerEscaped: { actor: Actor; remote: boolean };
   runnerLeft: { actor: Actor };
   hidingChanged: { actor: Actor; remote: boolean };
+  /** A monster opened a hiding spot; `checkRequested`: a hunter player on a client asks the host to. */
+  spotChecked: { index: number; by: string };
+  checkRequested: { index: number };
+  brokeFree: { actor: Actor; by: string; remote: boolean };
+  itemPicked: { index: number; by: string; remote: boolean };
+  /** A bottle or glowstick thrown from (x, y) to (tx, ty), or Yoko's whistle. */
+  itemThrown: { kind: ItemKind | "whistle"; by: string; x: number; y: number; tx: number; ty: number; remote: boolean };
+  fusePicked: { index: number; by: string; remote: boolean };
+  fuseInserted: { index: number; by: string; remote: boolean };
+  fuseDropped: { index: number; x: number; y: number; remote: boolean };
+  powerRestored: Record<string, never>;
+  gateChanged: { index: number; open: boolean; by: string; remote: boolean };
+  /** A noise other peers can't work out themselves (radius in tiles). */
+  noiseMade: { x: number; y: number; radius: number; kind: NoiseKind; by: string };
   bossSpawned: { remote: boolean };
   /** Host: the round is over; final status of every runner. */
   roundResults: { results: Record<string, RunnerStatus> };
@@ -52,6 +73,8 @@ export class World {
   readonly doorish = new Set<number>();
   readonly rng: Rng;
   readonly actors: Actor[] = [];
+  /** Which bot is going for which goal ("key:2" → bot), so they split the work. */
+  readonly claims = new Map<string, Actor>();
   private readonly roomLookup: Int16Array;
 
   local!: Actor;
@@ -66,6 +89,12 @@ export class World {
   noise!: Noise;
   director!: Director;
   round!: Round;
+  vitals!: Vitals;
+  items!: Items;
+  power!: Power;
+  interact!: Interact;
+  gates!: Gates;
+  scent!: Scent;
 
   constructor(
     readonly scene: Phaser.Scene,

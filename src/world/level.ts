@@ -1,6 +1,7 @@
 // Level data produced by the generator, plus the room helpers everyone shares.
 import { MAP_W, MAP_H } from "../core/constants";
 import type { Tile } from "../core/types";
+import type { ItemKind } from "../data/items";
 import type { RoomType } from "../data/rooms";
 
 export interface Rect { x: number; y: number; w: number; h: number; }
@@ -27,6 +28,11 @@ export interface BedSpot {
 
 export interface LampSource { col: number; row: number; radius: number; intensity: number; }
 
+export interface ItemSpawn { tile: Tile; kind: ItemKind; }
+
+/** A door in a doorway (1–2 tiles). `horizontal`: set in a wall that runs left–right (you pass up/down). */
+export interface GateSpot { tiles: Tile[]; horizontal: boolean; open: boolean; }
+
 export interface LevelData {
   seed: number;
   /** "#" wall, "." floor, "B" bloody floor. Locked doors are floor here; see lockedDoors. */
@@ -41,9 +47,18 @@ export interface LevelData {
   furniture: FurniturePiece[];
   hidingSpots: Tile[];
   bedSpots: BedSpot[];
-  doors: Tile[];
+  /** Room ring tiles that are open: doorways between rooms and corridors. */
+  doorways: Tile[];
+  /** Doors that open and close, in some doorways. */
+  gates: GateSpot[];
+  /** Holes knocked through walls (drawn broken, with rubble). */
+  breaches: Tile[];
   lockedDoors: LockedDoor[];
   lights: LampSource[];
+  /** Fuses lying around, and the box on a wall they go into (null when the exit needs no power). */
+  fuseTiles: Tile[];
+  fuseBox: Tile | null;
+  items: ItemSpawn[];
   startRoom: RoomType;
 }
 

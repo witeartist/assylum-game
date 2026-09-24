@@ -1,14 +1,15 @@
-// One light model for both the picture and the AI. Lamps are static: their light is baked per
-// tile (walls block it) for AI checks, and the same lamps — plus flashlights, the hunter's flash
-// and glowing objects — are handed to the renderer every frame.
+// One light model for both the picture and the AI. Every light of the frame — lamps, flashlights,
+// glowsticks, the hunter's flash, glowing objects — is collected once; the renderer draws them and
+// `lightAt` answers "is this spot lit?" for vision and AI with the same numbers.
 import { MAP_W, MAP_H, TILE } from "../core/constants";
-import { tileCenter, tileIndex, worldToTile } from "../core/geom";
+import { dist, tileCenter, tileIndex, worldToTile } from "../core/geom";
 import type { Vec2 } from "../core/types";
-import { FLASHLIGHT_MODES, FLICKER, FOX_FLASH } from "../data/balance";
+import { FLASHLIGHT_MODES, FLICKER, FOX_FLASH, SEE_LIGHT } from "../data/balance";
 import { BOSS_RED_TINT, EMERGENCY_SHARE, FLICKER_SHARE, LIGHTS, type LightLook, type RGB } from "../data/lights";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import { hasLineOfSight } from "../world/grid";
+import { beamStrength } from "./vitals";
 
 /** A light for one frame, world px. kind: 0 lamp (fades with view distance), 1 plain, 2 flashlight beam. */
 export interface FrameLight {
@@ -21,42 +22,67 @@ export interface FrameLight {
 
 interface Lamp { x: number; y: number; radius: number; intensity: number; emergency: boolean; flicker: boolean; seed: number; }
 
+/** Lamps closer than this to the boss stutter and die down — the warning that it is near. */
+const BOSS_DIM_RANGE = TILE * 7;
+
 /** Stable pseudo-random number for a lamp, the same on every peer. */
 function lampHash(col: number, row: number): number {
   const h = Math.sin(col * 127.1 + row * 311.7) * 43758.5453;
   return h - Math.floor(h);
 }
 
+/** Strength of a light at distance `d` inside its cone (the shader uses the same curve). */
+function falloff(l: FrameLight, p: Vec2, d: number): number {
+  if (d >= l.radius) return 0;
+  let att = 1 - d / l.radius;
+  att *= att;
+  if (l.cosOuter > -1.5 && d > 0.5) {
+    const c = ((p.x - l.x) * l.dirX + (p.y - l.y) * l.dirY) / d;
+    const t = Math.min(1, Math.max(0, (c - l.cosOuter) / Math.max(1e-4, l.cosInner - l.cosOuter)));
+    att *= t * t * (3 - 2 * t);
+  }
+  return att * l.intensity;
+}
+
 export class Lighting {
-  /** Lamp brightness per tile, 0..1 (0 = dark). */
-  readonly lampLevel = new Float32Array(MAP_W * MAP_H);
   flickerStrength: number = FLICKER.calm;
+  /** Every light this frame (rebuilt in update). */
+  lights: FrameLight[] = [];
   private t = 0;
   private lamps: Lamp[];
+  /** For each tile, the lamps that can shine on it (walls block them). */
+  private lampsFor: number[][];
 
   constructor(private world: World) {
     this.lamps = world.level.lights.map(l => {
       const h = lampHash(l.col, l.row), p = tileCenter(l);
       return { x: p.x, y: p.y, radius: l.radius * TILE, intensity: l.intensity, emergency: h < EMERGENCY_SHARE, flicker: h > 1 - FLICKER_SHARE, seed: h * 100 };
     });
-    for (const lamp of world.level.lights) {
+    this.lampsFor = Array.from({ length: MAP_W * MAP_H }, () => []);
+    this.bakeLamps();
+    world.events.on("doorOpened", () => this.bakeLamps());
+    world.events.on("gateChanged", () => this.bakeLamps());
+  }
+
+  /** Which lamp reaches which tile, through the current walls and doors. */
+  private bakeLamps(): void {
+    for (const list of this.lampsFor) list.length = 0;
+    this.world.level.lights.forEach((lamp, i) => {
       const from = tileCenter(lamp);
       const r = Math.ceil(lamp.radius);
       for (let row = Math.max(0, lamp.row - r); row <= Math.min(MAP_H - 1, lamp.row + r); row++) {
         for (let col = Math.max(0, lamp.col - r); col <= Math.min(MAP_W - 1, lamp.col + r); col++) {
-          const d = Math.hypot(col - lamp.col, row - lamp.row);
-          if (d >= lamp.radius) continue;
-          const level = lamp.intensity * (1 - d / lamp.radius);
-          const i = tileIndex(col, row);
-          if (level <= this.lampLevel[i]) continue;
-          if (!hasLineOfSight(world.sight, from, tileCenter({ col, row }))) continue;
-          this.lampLevel[i] = level;
+          if (Math.hypot(col - lamp.col, row - lamp.row) >= lamp.radius + 0.7) continue;
+          if (hasLineOfSight(this.world.sight, from, tileCenter({ col, row }))) this.lampsFor[tileIndex(col, row)].push(i);
         }
       }
-    }
+    });
   }
 
-  update(dt: number): void { this.t += dt; }
+  update(dt: number): void {
+    this.t += dt;
+    this.lights = this.collect();
+  }
 
   /** Lamp positions and kinds, for drawing fixtures. */
   lampsInfo(): { x: number; y: number; emergency: boolean; flicker: boolean }[] {
@@ -68,62 +94,91 @@ export class Lighting {
     return Math.abs(Math.sin(this.t * 7.3) * Math.sin(this.t * 3.1)) * this.flickerStrength * 0.12;
   }
 
-  inLamp(p: Vec2): boolean {
+  /** How brightly `p` is lit right now (0 = pitch dark, ~1 = in a lamp's or beam's heart). */
+  lightAt(p: Vec2): number {
     const t = worldToTile(p);
-    return this.lampLevel[tileIndex(t.col, t.row)] > 0;
+    if (t.col < 0 || t.row < 0 || t.col >= MAP_W || t.row >= MAP_H) return 0;
+    const lampsHere = this.lampsFor[tileIndex(t.col, t.row)];
+    let sum = 0;
+    for (const l of this.lights) {
+      const d = dist(l, p);
+      if (d >= l.radius) continue;
+      const k = falloff(l, p, d);
+      if (k <= 0.01) continue;
+      if (l.kind === 0) {
+        // Lamps: the baked table says which ones reach this tile.
+        if (!lampsHere.some(i => this.lamps[i].x === l.x && this.lamps[i].y === l.y)) continue;
+      } else if (d > TILE * 0.5 && !hasLineOfSight(this.world.sight, l, p)) continue;
+      sum += k;
+      if (sum >= 1) return sum;
+    }
+    return sum;
   }
 
-  /** A runner the hunter can spot: flashlight on, standing in lamp light, or caught in the flash. */
+  /** Lit enough to be seen. */
+  isLit(p: Vec2): boolean { return this.lightAt(p) >= SEE_LIGHT; }
+
+  /** A runner the hunter can spot from afar: lit, or holding a burning flashlight. */
   isExposed(a: Actor): boolean {
-    return a.flashlight.on || this.inLamp(a.authPos) || this.world.foxFlash.active;
+    return a.flashlight.on || this.isLit(a.authPos);
   }
 
-  /** Every light that can touch the view rect (x, y, w, h), most important first. */
+  /** Every light that can touch the view rect, most important first, plus the viewer's own. */
   frameLights(view: { x: number; y: number; width: number; height: number }, viewer: Actor, max: number): FrameLight[] {
+    const w = this.world;
+    const own = w.local.role === "hunter" && viewer === w.local ? LIGHTS.hunterEyes : LIGHTS.personal;
+    const out: FrameLight[] = [this.omni(viewer.x, viewer.y, own, own.radius ?? 1, 1)];
+    const cx = view.x + view.width / 2, cy = view.y + view.height / 2;
+    const visible = this.lights.filter(l =>
+      l.x + l.radius > view.x && l.x - l.radius < view.x + view.width && l.y + l.radius > view.y && l.y - l.radius < view.y + view.height);
+    // Moving lights (flashlights, flash, glows) before lamps, then nearest first.
+    visible.sort((a, b) => (a.kind === 0 ? 1 : 0) - (b.kind === 0 ? 1 : 0) || Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+    return out.concat(visible.slice(0, max - 1));
+  }
+
+  private omni(x: number, y: number, look: LightLook, radiusTiles: number, intensity: number, kind: 0 | 1 | 2 = 1, color = look.color): FrameLight {
+    return { x, y, radius: radiusTiles * TILE, intensity: intensity * look.intensity, color, kind, dirX: 1, dirY: 0, cosOuter: -2, cosInner: -1 };
+  }
+
+  /** All lights of this frame. */
+  private collect(): FrameLight[] {
     const w = this.world, out: FrameLight[] = [];
-    const omni = (x: number, y: number, look: LightLook, radiusTiles: number, intensity: number, kind: 0 | 1 | 2 = 1, color = look.color) =>
-      out.push({ x, y, radius: radiusTiles * TILE, intensity: intensity * look.intensity, color, kind, dirX: 1, dirY: 0, cosOuter: -2, cosInner: -1 });
-
-    // Local perception first: it must never be culled.
-    if (w.local.role === "hunter" && viewer === w.local) omni(viewer.x, viewer.y, LIGHTS.hunterEyes, LIGHTS.hunterEyes.radius, 1);
-    else omni(viewer.x, viewer.y, LIGHTS.personal, LIGHTS.personal.radius, 1);
-
     for (const a of w.actors) {
-      if (!a.inPlay || a.hiding || !a.flashlight.on) continue;
+      if (!a.inPlay || a.hiding) continue;
+      const k = beamStrength(a, this.t);
+      if (k <= 0) continue;
       const mode = FLASHLIGHT_MODES[a.flashlight.mode - 1];
       out.push({
-        x: a.x, y: a.y, radius: mode.rangeTiles * TILE, intensity: LIGHTS.flashlight.intensity, color: LIGHTS.flashlight.color, kind: 2,
+        x: a.x, y: a.y, radius: mode.rangeTiles * TILE, intensity: LIGHTS.flashlight.intensity * k, color: LIGHTS.flashlight.color, kind: 2,
         dirX: Math.cos(a.facing), dirY: Math.sin(a.facing), cosOuter: Math.cos(mode.halfAngle), cosInner: Math.cos(mode.halfAngle * 0.55),
       });
-      omni(a.x, a.y, LIGHTS.spill, LIGHTS.spill.radius, 1);
+      out.push(this.omni(a.x, a.y, LIGHTS.spill, LIGHTS.spill.radius, k));
     }
     const flash = w.foxFlash;
-    if (flash.active) omni(flash.x, flash.y, LIGHTS.foxFlash, FOX_FLASH.radiusTiles, 1);
+    if (flash.active) out.push(this.omni(flash.x, flash.y, LIGHTS.foxFlash, FOX_FLASH.radiusTiles, 1));
+    for (const g of w.items.glowLights()) out.push(this.omni(g.x, g.y, LIGHTS.glowstick, LIGHTS.glowstick.radius, g.strength));
 
+    const boss = w.director.boss;
     const redness = w.director.bossSpawned ? BOSS_RED_TINT : 0;
     const dim = 1 - this.flicker * 3;
     for (const lamp of this.lamps) {
       const look = lamp.emergency ? LIGHTS.emergency : LIGHTS.lamp;
       let k = lamp.intensity * dim;
-      if (lamp.flicker) {
-        const f = Math.sin(this.t * 13 + lamp.seed) * Math.sin(this.t * 7.7 + lamp.seed * 2);
-        k *= f > 0.82 ? 0.15 : 0.85 + 0.15 * f;
+      const nearBoss = boss && boss.inPlay && dist(lamp, boss) < BOSS_DIM_RANGE;
+      if (lamp.flicker || nearBoss) {
+        const f = Math.sin(this.t * (nearBoss ? 23 : 13) + lamp.seed) * Math.sin(this.t * 7.7 + lamp.seed * 2);
+        k *= f > (nearBoss ? 0.2 : 0.82) ? 0.12 : 0.85 + 0.15 * f;
       }
       const c = look.color, e = LIGHTS.emergency.color;
       const color: RGB = [c[0] + (e[0] - c[0]) * redness, c[1] + (e[1] - c[1]) * redness, c[2] + (e[2] - c[2]) * redness];
-      omni(lamp.x, lamp.y, look, lamp.radius / TILE, k, 0, color);
+      out.push(this.omni(lamp.x, lamp.y, look, lamp.radius / TILE, k, 0, color));
     }
-    for (const d of w.doors.doors) if (!d.open) omni(d.terminal.x, d.terminal.y - 8, LIGHTS.terminal, LIGHTS.terminal.radius, 1 + 0.15 * Math.sin(this.t * 4));
+    for (const d of w.doors.doors) if (!d.open) out.push(this.omni(d.terminal.x, d.terminal.y - 8, LIGHTS.terminal, LIGHTS.terminal.radius, 1 + 0.15 * Math.sin(this.t * 4)));
     const exit = w.objectives.exit;
     const exitLook = exit.open ? LIGHTS.exitOpen : LIGHTS.exitLocked;
-    omni(exit.point.x, exit.point.y, exitLook, exitLook.radius, exit.open ? 1 + 0.2 * Math.sin(this.t * 3) : 1);
-    for (const k of w.objectives.keys) if (!k.taken) omni(k.sprite.x, k.sprite.y, LIGHTS.key, LIGHTS.key.radius, 0.8 + 0.2 * Math.sin(this.t * 5 + k.bob));
-
-    const cx = view.x + view.width / 2, cy = view.y + view.height / 2;
-    const visible = out.filter(l =>
-      l.x + l.radius > view.x && l.x - l.radius < view.x + view.width && l.y + l.radius > view.y && l.y - l.radius < view.y + view.height);
-    // Moving lights (flashlights, flash, glows) before lamps, then nearest first.
-    visible.sort((a, b) => (a.kind === 0 ? 1 : 0) - (b.kind === 0 ? 1 : 0) || Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
-    return visible.slice(0, max);
+    out.push(this.omni(exit.point.x, exit.point.y, exitLook, exitLook.radius, exit.open ? 1 + 0.2 * Math.sin(this.t * 3) : 1));
+    for (const k of w.objectives.keys) if (!k.taken) out.push(this.omni(k.sprite.x, k.sprite.y, LIGHTS.key, LIGHTS.key.radius, 0.8 + 0.2 * Math.sin(this.t * 5 + k.bob)));
+    for (const f of w.power.glows()) out.push(this.omni(f.x, f.y, LIGHTS.fuse, LIGHTS.fuse.radius, 0.8 + 0.2 * Math.sin(this.t * 4 + f.x)));
+    return out;
   }
 }

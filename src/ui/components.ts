@@ -188,6 +188,90 @@ export class IconText implements Stackable {
   setVisible(on: boolean): this { this.text.setVisible(on); this.icon.setVisible(on); return this; }
 }
 
+/** A small meter: an icon and a bar (stamina, battery, breath…). Origin: left, vertically centred. */
+export class Meter {
+  private readonly icon: Phaser.GameObjects.Image | null;
+  private readonly track: Phaser.GameObjects.Rectangle;
+  private readonly fill: Phaser.GameObjects.Rectangle;
+  private readonly barX: number;
+
+  constructor(scene: Scene, x: number, y: number, icon: string | null, private readonly w: number, private tone: Tone, size = 16) {
+    this.icon = icon ? scene.add.image(x, y, icon).setOrigin(0, 0.5) : null;
+    this.icon?.setScale(size / Math.max(this.icon.width, this.icon.height));
+    this.barX = x + (this.icon ? size + 6 : 0);
+    this.track = scene.add.rectangle(this.barX, y, w, 6, SURFACE.track, 0.9).setOrigin(0, 0.5);
+    this.fill = scene.add.rectangle(this.barX, y, w, 6, TONES[tone].strong).setOrigin(0, 0.5);
+  }
+
+  /** Value 0..1, optionally in another tone (e.g. red when low). */
+  set(value: number, tone: Tone = this.tone): this {
+    this.fill.width = Math.max(0, Math.min(1, value)) * this.w;
+    this.fill.setFillStyle(TONES[tone].strong);
+    this.icon?.setTint(Phaser.Display.Color.HexStringToColor(TONES[tone].ink).color);
+    return this;
+  }
+
+  setVisible(on: boolean): this {
+    this.icon?.setVisible(on);
+    this.track.setVisible(on);
+    this.fill.setVisible(on);
+    return this;
+  }
+}
+
+/** One inventory slot: a frame, the item's picture and the key that uses it. */
+export class Slot {
+  private readonly frame: Phaser.GameObjects.Rectangle;
+  private readonly item: Phaser.GameObjects.Image;
+  private readonly key: Phaser.GameObjects.Text;
+
+  constructor(scene: Scene, x: number, y: number, private readonly size: number, keyLabel: string) {
+    this.frame = scene.add.rectangle(x, y, size, size, SURFACE.card, 0.8).setStrokeStyle(1, SURFACE.edge);
+    this.item = scene.add.image(x, y, "__DEFAULT").setVisible(false);
+    this.key = label(scene, x - size / 2 + 3, y - size / 2 + 1, keyLabel, "tag", INK.dim, { origin: [0, 0] });
+  }
+
+  set(icon: string | null): this {
+    if (!icon) { this.item.setVisible(false); return this; }
+    this.item.setTexture(icon).setVisible(true);
+    this.item.setScale((this.size - 8) / Math.max(this.item.width, this.item.height));
+    return this;
+  }
+
+  setVisible(on: boolean): this {
+    this.frame.setVisible(on);
+    this.key.setVisible(on);
+    if (!on) this.item.setVisible(false);
+    return this;
+  }
+}
+
+/** A sheet of paper read on the spot (notes found in the hospital). */
+export class NotePanel {
+  private readonly objects: Phaser.GameObjects.GameObject[];
+  private readonly title: Phaser.GameObjects.Text;
+  private readonly body: Phaser.GameObjects.Text;
+
+  constructor(scene: Scene) {
+    const cx = CANVAS_W / 2, cy = CANVAS_H / 2 - 20, w = 420, h = 190;
+    this.title = label(scene, cx, cy - h / 2 + 24, "", "h3", TONES.warn.ink);
+    this.body = label(scene, cx, cy + 6, "", "body", INK.text, { wrap: w - 48 });
+    this.objects = [
+      panel(scene, cx, cy, w + 6, h + 6, { fill: TONES.warn.soft, alpha: 0.5 }),
+      panel(scene, cx, cy, w, h, { fill: SURFACE.card, alpha: 0.96 }),
+      this.title, this.body,
+      label(scene, cx, cy + h / 2 - 16, "ESC — закрыть", "tiny", INK.faint),
+    ];
+    for (const o of this.objects) (o as unknown as Phaser.GameObjects.Components.Depth).setDepth(UI_DEPTH.modal);
+    this.show(null);
+  }
+
+  show(note: { title: string; text: string } | null): void {
+    for (const o of this.objects) (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(!!note);
+    if (note) { this.title.setText(note.title); this.body.setText(note.text); }
+  }
+}
+
 /** Short messages in the middle of the screen; several stack instead of overlapping. */
 export class ToastStack {
   private items: Phaser.GameObjects.Text[] = [];

@@ -27,9 +27,9 @@ const DEFAULT_RULE = { max: 512, trim: true };
 
 /** File name → category, for names from docs/ASSETS.md. */
 const BY_NAME = [
-  [/^(floor_|wall_)/, "surfaces"],
-  [/^(blood_|bloody_|cracks_|dirt_|puddle_|papers|glass_shards|pills|rubble|rust_stain)/, "decals"],
-  [/^(locker_|terminal$|door_metal|exit_door|key$|corpse$)/, "interactive"],
+  [/^(floor_|wall_top|wall_face)/, "surfaces"],
+  [/^(blood_|bloody_|cracks_|dirt_|puddle_|papers|glass_shards|pills|rubble|rust_stain|breach_)/, "decals"],
+  [/^(locker_|terminal$|door_metal|door_wood|fuse_box|exit_door|key$|corpse$)/, "interactive"],
   [/^(battery|adrenaline|bottle|sedative|glowstick|note|map_piece|fuse)$/, "items"],
   [/^(panel|button|icon_)/, "ui"],
   [/^(naumi|kuruna|wite|sumrak|yoko|foxmind|jeloch)_/, "characters"],

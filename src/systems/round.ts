@@ -1,8 +1,10 @@
 // The round: who is still in play, catches and escapes (single implementations), spectating
 // after you're out, and the end of the round.
 import { HUNTER_ID, CHARACTERS } from "../data/characters";
+import { BREAK_FREE } from "../data/balance";
 import { session } from "../net/session";
 import type { Actor } from "../entities/Actor";
+import { NET_FLAG } from "../entities/state";
 import type { World } from "../game/World";
 import { decideRoundEnd, outcomeFor, RoundTally, type LocalDone, type RunnerCounts } from "../game/roundRules";
 import type { RunnerStatus } from "../core/types";
@@ -41,6 +43,32 @@ export class Round {
   /** The local player can still move and interact. */
   canAct(): boolean { return !this.finishScheduled && this.world.local.inPlay; }
   counts(): RunnerCounts { return this.tally.counts(); }
+
+  /** A monster got its hands on a runner (authority only): they break free if they can, else caught. */
+  grab(a: Actor, by: Actor): void {
+    const w = this.world;
+    if (!a.inPlay || a.role !== "runner" || this.finishScheduled || by.stunned > 0) return;
+    const canFree = a.control === "remote" ? (a.netFlags & NET_FLAG.canBreakFree) !== 0 : a.breakFree > 0 || w.items.has(a, "sedative");
+    if (canFree) this.breakFree(a, by);
+    else this.catchRunner(a, by.def.name);
+  }
+
+  /** The runner slips out of the monster's hands: it is stunned, the runner gets a head start. */
+  breakFree(a: Actor, by: Actor | null, remote = false): void {
+    const w = this.world;
+    if (a.control === "remote") {
+      a.netFlags &= ~NET_FLAG.canBreakFree; // until its peer reports again
+    } else {
+      if (a.breakFree > 0) a.breakFree--;
+      else w.items.useSedative(a);
+      a.stamina = Math.max(a.stamina, a.staminaMax * BREAK_FREE.stamina);
+      a.exhausted = false;
+    }
+    if (by && by.control !== "remote") { by.stunned = BREAK_FREE.stun; by.halt(); }
+    w.toast(a === w.local ? "УДАЛОСЬ ВЫРВАТЬСЯ! БЕГИ!" : a.def.name + " вырывается из лап!", "warn");
+    w.shake(250, 0.012);
+    w.events.emit("brokeFree", { actor: a, by: by?.id ?? "", remote });
+  }
 
   catchRunner(a: Actor, by: string, remote = false): void {
     const w = this.world;

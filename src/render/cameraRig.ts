@@ -42,6 +42,12 @@ export class CameraRig {
     return { x: (p.x - this.viewX) * VIEW_ZOOM, y: (p.y - this.viewY) * VIEW_ZOOM };
   }
 
+  /** Screen (canvas) position, e.g. the mouse → world position. */
+  toWorld(p: { x: number; y: number }): Vec2 {
+    const v = this.cam.getWorldPoint(p.x, p.y);
+    return { x: v.x, y: v.y };
+  }
+
   private apply(): void {
     this.cx = Math.min(Math.max(this.cx, this.viewW / 2), WORLD_W - this.viewW / 2);
     this.cy = Math.min(Math.max(this.cy, this.viewH / 2 - 16), WORLD_H - this.viewH / 2);

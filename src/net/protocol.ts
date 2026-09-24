@@ -2,7 +2,9 @@
 import type { RunnerStatus } from "../core/types";
 import type { CharacterId } from "../data/characters";
 import type { DifficultyId } from "../data/difficulty";
-import type { NetState } from "../entities/Actor";
+import type { ItemKind } from "../data/items";
+import type { NetState } from "../entities/state";
+import type { NoiseKind } from "../systems/noise";
 
 export interface PlayerInfo {
   character: CharacterId;
@@ -34,6 +36,14 @@ export type GameMessage =
   | { type: "key"; index: number; by: string }
   | { type: "door"; index: number; by: string }
   | { type: "hide"; id: string; on: boolean }
+  | { type: "item"; index: number; by: string }
+  | { type: "gate"; index: number; open: boolean; by: string }
+  | { type: "throw"; kind: ItemKind | "whistle"; by: string; x: number; y: number; tx: number; ty: number }
+  | { type: "fuse"; op: "pick" | "insert"; index: number; by: string }
+  | { type: "fuseDrop"; index: number; x: number; y: number }       // host → clients
+  | { type: "noise"; x: number; y: number; r: number; kind: NoiseKind; by: string }
+  | { type: "check"; index: number; by: string }                   // client → host: search a spot; host → clients: it's open
+  | { type: "freed"; id: string; by: string }                      // host → clients: a runner broke free
   | { type: "escaped"; id: string }
   | { type: "caught"; id: string; by: string }                // host → clients
   | { type: "boss" }                                          // host → clients
@@ -45,7 +55,7 @@ export type PingMessage = { type: "ping" };
 
 export type Message = LobbyMessage | GameMessage | PingMessage;
 
-const GAME_TYPES = new Set<string>(["pos", "snap", "key", "door", "hide", "escaped", "caught", "boss", "left", "end"]);
+const GAME_TYPES = new Set<string>(["pos", "snap", "key", "door", "hide", "item", "gate", "throw", "fuse", "fuseDrop", "noise", "check", "freed", "escaped", "caught", "boss", "left", "end"]);
 
 export function isGameMessage(m: Message): m is GameMessage {
   return GAME_TYPES.has(m.type);

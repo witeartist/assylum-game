@@ -1,74 +1,254 @@
-// Runner bot: collects keys, hacks terminals, runs for the exit, flees from threats it sees.
-import { dist, worldToTile } from "../core/geom";
-import type { Tile } from "../core/types";
-import { BOT_DANGER_RANGE, SNEAK_MULT, SPRINT_MULT } from "../data/balance";
+// Runner bot. Splits the work with the other bots (each goes for a goal nobody else claimed):
+// keys, fuses to the fuse box, terminals, then the exit. It walks — quietly — and keeps away from
+// where it saw or heard a monster; when one comes for it, it runs, and when it is out of breath
+// it hides and holds its breath. It lights the flashlight only when nothing is around.
+import { TILE } from "../core/constants";
+import { dist, tileIndex, worldToTile } from "../core/geom";
+import type { Tile, Vec2 } from "../core/types";
+import { BOT_DANGER_RANGE, LOCKER_RANGE } from "../data/balance";
 import type { Actor, Brain } from "../entities/Actor";
 import type { World } from "../game/World";
-import { findPath } from "../world/grid";
-import { chooseEscapeTile, choosePatrolTile, chooseRunnerGoal, type RunnerGoal } from "./goals";
-import { canSee } from "./perception";
+import { findPath, findPathWeighted, hasLineOfSight } from "../world/grid";
+import { MAP_W, MAP_H } from "../core/constants";
+import { chooseEscapeTile, choosePatrolTile, chooseRunnerGoal, goalKey, type RunnerGoal } from "./goals";
+import { inBeam } from "./senses";
+import type { HideSpot } from "../systems/hiding";
 
-type State = "patrol" | "flee" | "seek-key" | "hack" | "escape";
+type State = "goal" | "flee" | "hide" | "hack" | "insert" | "explore";
+
+/** A monster the bot saw or heard: where and when. */
+interface Sighting extends Vec2 { t: number; seen: boolean; }
 
 const SEPARATION_DIST = 18;
 const SEPARATION_PUSH = 40;
+/** Bots keep this far from where a monster was, tiles. */
+const AVOID_RADIUS = 6;
+const REMEMBER = 20;
 
 export class RunnerBot implements Brain {
-  state: State = "patrol";
+  state: State = "goal";
   goal: RunnerGoal | null = null;
+  private sightings: Sighting[] = [];
+  private lastNoise: number;
+  private t = 0;
+  private hideSpot: HideSpot | null = null;
+  private hideLeft = 0;
+  private dest: Tile | null = null;
+  /** When a monster was last noticed (seen or heard). */
+  private lastScare = -999;
 
   constructor(private world: World, private actor: Actor) {
     actor.pathTimer = world.rng.range(0, 0.4);
+    this.lastNoise = world.noise.lastId;
   }
 
   update(dt: number): void {
     const w = this.world, a = this.actor;
     if (!a.inPlay) return;
-    const tile = worldToTile(a);
-    const threats: Tile[] = [];
-    let danger = false;
-    for (const t of w.threats()) {
-      threats.push(worldToTile(t.authPos));
-      if (canSee(w, a, t.authPos, BOT_DANGER_RANGE)) danger = true;
+    this.t += dt;
+    this.perceive();
+    const danger = this.danger();
+    if (a.hiding) { this.stayHidden(dt, danger); return; }
+    this.useItems(danger);
+
+    const scared = danger && (danger.seen ? danger.d < TILE * 7 : danger.d < TILE * 3.5);
+    if (scared && this.state !== "hide") this.state = "flee";
+    else if (this.state === "flee" && !scared) this.replanSoon();
+
+    switch (this.state) {
+      case "flee": this.flee(dt, danger!); break;
+      case "hide": this.goHide(dt); break;
+      case "hack":
+        if (this.goal && w.doors.hackStep(this.goal.index, a, dt)) return;
+        this.state = "goal";
+        break;
+      case "insert":
+        if (w.power.busy(a)) return;
+        this.state = "goal";
+        break;
+      default: this.pursueGoal(dt, danger);
     }
-
-    // Hacking a terminal: stay put until the door opens, unless a threat shows up.
-    if (this.state === "hack" && !danger && this.goal && w.doors.hackStep(this.goal.index, a, dt)) return;
-
-    a.pathTimer -= dt;
-    if (a.pathTimer <= 0 || a.path.length === 0) this.replan(tile, threats, danger);
-
-    const mult = this.state === "flee" ? SPRINT_MULT : danger && this.state === "patrol" ? SNEAK_MULT : 1;
-    a.followPath(a.speed * mult, dt);
     this.separate();
   }
 
-  private replan(tile: Tile, threats: Tile[], danger: boolean): void {
+  // ── Senses ──
+
+  private perceive(): void {
     const w = this.world, a = this.actor;
-    let dest: Tile;
-    if (danger) {
-      this.state = "flee";
-      dest = chooseEscapeTile(w.rng, w.level, tile, threats);
-      a.pathTimer = 0.5;
-    } else {
-      const exit = w.objectives.exit.open ? w.objectives.exit.tile : null;
-      this.goal = chooseRunnerGoal(w.grid, tile, exit, w.objectives.keyGoals(), w.doors.terminalGoals());
-      if (this.goal) {
-        this.state = this.goal.kind === "exit" ? "escape" : this.goal.kind === "key" ? "seek-key" : "hack";
-        dest = this.goal.tile;
-        a.pathTimer = this.goal.kind === "exit" ? 0.8 : w.rng.range(1.2, 1.7);
-      } else {
-        this.state = "patrol";
-        dest = choosePatrolTile(w.rng, w.level, tile);
-        a.pathTimer = w.rng.range(2, 3);
-      }
+    for (const m of w.threats()) {
+      const p = m.authPos, d = dist(a, p);
+      if (d > BOT_DANGER_RANGE || !hasLineOfSight(w.sight, a, p)) continue;
+      if (d < TILE * 3 || w.lighting.isLit(p) || inBeam(a, p)) this.remember(p, true);
     }
-    a.path = findPath(w.grid, tile, dest);
-    if (a.path.length === 0 && this.state !== "hack") {
-      // Already there or unreachable: head somewhere far instead.
-      a.path = findPath(w.grid, tile, choosePatrolTile(w.rng, w.level, tile));
+    for (const e of w.noise.since(this.lastNoise)) {
+      if (e.kind === "monster" && w.noise.hears(a, e)) this.remember(e, false);
+    }
+    this.lastNoise = w.noise.lastId;
+    this.sightings = this.sightings.filter(s => this.t - s.t < REMEMBER);
+  }
+
+  private remember(p: Vec2, seen: boolean): void {
+    this.lastScare = this.t;
+    const near = this.sightings.find(s => dist(s, p) < TILE * 2);
+    if (near) { near.x = p.x; near.y = p.y; near.t = this.t; near.seen = near.seen || seen; }
+    else this.sightings.push({ x: p.x, y: p.y, t: this.t, seen });
+  }
+
+  /** The closest recent sighting: how far, and whether it was seen just now. */
+  private danger(): { d: number; seen: boolean; at: Vec2 } | null {
+    let best: { d: number; seen: boolean; at: Vec2 } | null = null;
+    for (const s of this.sightings) {
+      if (this.t - s.t > 4) continue;
+      const d = dist(this.actor, s);
+      if (!best || d < best.d) best = { d, seen: s.seen && this.t - s.t < 1, at: s };
+    }
+    return best;
+  }
+
+  // ── Behaviour ──
+
+  private pursueGoal(dt: number, danger: { d: number } | null): void {
+    const w = this.world, a = this.actor;
+    a.pathTimer -= dt;
+    if (a.pathTimer <= 0 || a.path.length === 0) this.replan();
+    a.gait = danger && danger.d < TILE * 9 ? "sneak" : "walk";
+    if (!w.gates.aiPass(a, dt)) a.followPath(a.gaitSpeed(), dt);
+    // Arrived at a terminal or at the fuse box?
+    const g = this.goal;
+    if (g?.kind === "terminal" && w.doors.hackStep(g.index, a, 0)) this.state = "hack";
+    if (g?.kind === "box" && w.power.startInsert(a)) this.state = "insert";
+  }
+
+  private replan(): void {
+    const w = this.world, a = this.actor, here = worldToTile(a);
+    this.releaseClaim();
+    const o = w.objectives;
+    const carrying = w.power.carried(a) >= 0;
+    this.goal = chooseRunnerGoal(w.grid, here, {
+      exit: o.exit.open ? o.exit.tile : null,
+      keys: o.keyGoals(),
+      terminals: w.doors.terminalGoals(),
+      fuses: w.power.fuses.flatMap((f, index) => f.state === "ground" ? [{ tile: worldToTile(f), index }] : []),
+      box: carrying && w.level.fuseBox ? w.level.fuseBox : null,
+    }, this.claimedByOthers());
+    let dest: Tile;
+    if (this.goal) {
+      this.state = "goal";
+      w.claims.set(goalKey(this.goal), a);
+      dest = this.goal.tile;
+      a.pathTimer = this.goal.kind === "exit" ? 0.8 : w.rng.range(1.2, 1.8);
+    } else {
+      this.state = "explore";
+      dest = choosePatrolTile(w.rng, w.level, here);
+      a.pathTimer = w.rng.range(2, 3);
+    }
+    a.path = this.route(here, dest);
+    if (a.path.length === 0 && this.goal?.kind !== "terminal" && this.goal?.kind !== "box") {
+      // Already there or unreachable: head somewhere else for a moment.
+      a.path = findPath(w.grid, here, choosePatrolTile(w.rng, w.level, here));
       a.pathTimer = Math.max(a.pathTimer, w.rng.range(0.8, 1.3));
     }
+  }
+
+  private replanSoon(): void { this.state = "goal"; this.actor.pathTimer = 0; }
+
+  /**
+   * Run away from the monster. Out of its sight (or out of breath) with a hiding spot close by —
+   * slip in: a monster that didn't see you get in has to guess.
+   */
+  private flee(dt: number, danger: { d: number; seen: boolean; at: Vec2 }): void {
+    const w = this.world, a = this.actor;
+    const tired = a.exhausted || a.stamina < a.staminaMax * 0.25;
+    if ((tired || !danger.seen) && danger.d > TILE * 2.5 && a.pathTimer <= 0.05) {
+      const spot = this.freeSpotNear(TILE * (tired ? 5 : 4));
+      if (spot && (tired || w.rng.chance(0.7))) { this.hideSpot = spot; this.state = "hide"; this.dest = null; return; }
+    }
+    a.pathTimer -= dt;
+    if (a.pathTimer <= 0 || a.path.length === 0) {
+      const here = worldToTile(a);
+      const threats = this.sightings.filter(s => this.t - s.t < 4).map(s => worldToTile(s));
+      a.path = this.route(here, chooseEscapeTile(w.rng, w.level, here, threats));
+      a.pathTimer = 0.6;
+    }
+    a.gait = a.canRun ? "run" : "walk";
+    if (!w.gates.aiPass(a, dt)) a.followPath(a.gaitSpeed(), dt);
+  }
+
+  private goHide(dt: number): void {
+    const w = this.world, a = this.actor, spot = this.hideSpot;
+    if (!spot || spot.occupant) { this.state = "flee"; return; }
+    if (dist(a, spot) < LOCKER_RANGE * 0.8) {
+      w.hiding.set(a, true, spot);
+      this.hideLeft = w.rng.range(8, 15);
+      return;
+    }
+    const tile = worldToTile(spot);
+    if (!this.dest || this.dest.col !== tile.col || this.dest.row !== tile.row || a.path.length === 0) {
+      this.dest = tile;
+      a.path = findPath(w.grid, worldToTile(a), tile);
+    }
+    a.gait = a.canRun ? "run" : "walk";
+    if (!w.gates.aiPass(a, dt)) a.followPath(a.gaitSpeed(), dt);
+  }
+
+  /** In a hiding spot: wait until the monster has been gone for a while. */
+  private stayHidden(dt: number, danger: { d: number } | null): void {
+    this.hideLeft -= dt;
+    if (danger && danger.d < TILE * 10) this.hideLeft = Math.max(this.hideLeft, 4);
+    if (this.hideLeft > 0) return;
+    this.world.hiding.set(this.actor, false);
+    this.hideSpot = null;
+    this.replanSoon();
+  }
+
+  /** Batteries when the light dies, adrenaline when out of breath and chased; the torch only in peace. */
+  private useItems(danger: { d: number } | null): void {
+    const w = this.world, a = this.actor, bag = w.items.bag(a);
+    const slot = (k: string) => bag.findIndex(i => i === k);
+    if (a.flashlight.charge < 0.2 && slot("battery") >= 0) w.items.use(a, slot("battery"));
+    if (this.state === "flee" && a.stamina < a.staminaMax * 0.3 && slot("adrenaline") >= 0) w.items.use(a, slot("adrenaline"));
+    // A beam gives you away: only after a long quiet spell, never with a monster about.
+    const calm = !danger && this.t - this.lastScare > 15;
+    a.flashlight.on = calm && a.flashlight.charge > 0.25 && !w.lighting.isLit(a) && (a.flashlight.on || w.rng.chance(0.01));
+  }
+
+  // ── Helpers ──
+
+  /** A path that keeps away from where monsters were. */
+  private route(from: Tile, to: Tile): Tile[] {
+    const w = this.world;
+    const recent = this.sightings.filter(s => this.t - s.t < REMEMBER);
+    if (recent.length === 0) return findPath(w.grid, from, to);
+    const extra = new Float32Array(MAP_W * MAP_H);
+    for (const s of recent) {
+      const c = worldToTile(s), fade = 1 - (this.t - s.t) / REMEMBER;
+      for (let dr = -AVOID_RADIUS; dr <= AVOID_RADIUS; dr++) for (let dc = -AVOID_RADIUS; dc <= AVOID_RADIUS; dc++) {
+        const col = c.col + dc, row = c.row + dr;
+        if (col < 0 || row < 0 || col >= MAP_W || row >= MAP_H) continue;
+        const d = Math.hypot(dc, dr);
+        if (d <= AVOID_RADIUS) extra[tileIndex(col, row)] += 25 * (1 - d / AVOID_RADIUS) * fade;
+      }
+    }
+    return findPathWeighted(w.grid, from, to, extra);
+  }
+
+  private freeSpotNear(range: number): HideSpot | null {
+    let best: HideSpot | null = null, bestD = range;
+    for (const s of this.world.hiding.spots) {
+      const d = dist(this.actor, s);
+      if (!s.occupant && d < bestD) { bestD = d; best = s; }
+    }
+    return best;
+  }
+
+  private claimedByOthers(): Set<string> {
+    const out = new Set<string>();
+    for (const [k, who] of this.world.claims) if (who !== this.actor && who.inPlay) out.add(k);
+    return out;
+  }
+
+  private releaseClaim(): void {
+    for (const [k, who] of this.world.claims) if (who === this.actor) this.world.claims.delete(k);
   }
 
   /** Nudge away from other bots so they don't stack on the same tile. */

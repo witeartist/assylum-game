@@ -1,6 +1,6 @@
 // Camera post-process that lights the world: pass 1 renders a light map (lamps, flashlights,
-// wall shadows, line of sight, explored memory) at reduced resolution, pass 2 composites it
-// with the scene and grades the picture.
+// wall shadows, the viewer's line of sight) at reduced resolution, pass 2 composites it with the
+// scene and grades the picture.
 import Phaser from "phaser";
 import { MAP_W, MAP_H, TILE, WALL_HEIGHT } from "../../core/constants";
 import { dist } from "../../core/geom";
@@ -20,16 +20,14 @@ const HAZE: [number, number, number] = [1.0, 0.9, 0.7];
 export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
   world: World | null = null;
   rig: CameraRig | null = null;
-  /** Brightness of remembered (explored, out of sight) floor. */
-  memory = 0.13;
-  /** Brightness of wall tops. */
-  topLight = 0.3;
+  /** Brightness of wall tops relative to floors. */
+  topLight = 0.55;
+  /** Screenshot mode: light everywhere (even out of sight) and every room lit. Never in play. */
+  ambient: [number, number, number] = [0, 0, 0];
+  photo = false;
   private occ: Phaser.Renderer.WebGL.Wrappers.WebGLTextureWrapper | null = null;
-  private vis: Phaser.Renderer.WebGL.Wrappers.WebGLTextureWrapper | null = null;
   private occPixels = new Uint8Array(MAP_W * MAP_H * 4);
-  private visPixels = new Uint8Array(MAP_W * MAP_H * 4);
   private occVersion = -1;
-  private visVersion = -1;
   private lightA = new Float32Array(MAX_LIGHTS * 4);
   private lightB = new Float32Array(MAX_LIGHTS * 4);
   private lightC = new Float32Array(MAX_LIGHTS * 4);
@@ -51,7 +49,6 @@ export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipe
   private ensureTextures(): void {
     const gl = this.gl, r = this.renderer;
     if (!this.occ) this.occ = r.createTexture2D(0, gl.NEAREST, gl.NEAREST, gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.RGBA, this.occPixels, MAP_W, MAP_H);
-    if (!this.vis) this.vis = r.createTexture2D(0, gl.LINEAR, gl.LINEAR, gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.RGBA, this.visPixels, MAP_W, MAP_H);
   }
 
   private upload(w: World): void {
@@ -61,16 +58,6 @@ export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipe
       for (let i = 0; i < s.length; i++) { this.occPixels[i * 4] = s[i] ? (w.doorish.has(i) ? 153 : 255) : 0; this.occPixels[i * 4 + 3] = 255; }
       this.occ!.update(this.occPixels, MAP_W, MAP_H, false, gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.NEAREST, gl.NEAREST, gl.RGBA);
       this.occVersion = w.sight.version;
-    }
-    const v = w.vision;
-    if (v.version !== this.visVersion) {
-      for (let i = 0; i < v.mask.length; i++) {
-        this.visPixels[i * 4] = v.mask[i] * 255;
-        this.visPixels[i * 4 + 1] = v.explored[i] * 255;
-        this.visPixels[i * 4 + 3] = 255;
-      }
-      this.vis!.update(this.visPixels, MAP_W, MAP_H, false, gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.LINEAR, gl.LINEAR, gl.RGBA);
-      this.visVersion = v.version;
     }
   }
 
@@ -97,23 +84,22 @@ export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipe
       this.lightC.set([l.dirX, l.dirY, l.cosOuter, l.cosInner], i * 4);
     });
     this.set1i("uOcc", 1, lightShader);
-    this.set1i("uVis", 2, lightShader);
     this.set2f("uMapSize", MAP_W, MAP_H, lightShader);
     this.set1f("uTile", TILE, lightShader);
     this.set1f("uWallH", WALL_HEIGHT, lightShader);
     this.set4f("uView", view.x, view.y, view.width, view.height, lightShader);
     this.set1f("uFlipY", FLIP_Y, lightShader);
     this.set2f("uViewer", viewer.x, viewer.y, lightShader);
-    this.set1f("uSight", w.vision.radius * TILE, lightShader);
-    this.set1f("uMemory", this.memory, lightShader);
+    this.set1f("uSight", w.vision.sightRange, lightShader);
     this.set1f("uTopLight", this.topLight, lightShader);
+    this.set3f("uAmbient", this.ambient[0], this.ambient[1], this.ambient[2], lightShader);
+    this.set1f("uPhoto", this.photo ? 1 : 0, lightShader);
     this.set1f("uSoft", quality.softShadows ? SOFT_SHADOW : 0, lightShader);
     this.set1i("uLightCount", lights.length, lightShader);
     this.set4fv("uLightA", this.lightA, lightShader);
     this.set4fv("uLightB", this.lightB, lightShader);
     this.set4fv("uLightC", this.lightC, lightShader);
     this.bindTexture(this.occ!, 1);
-    this.bindTexture(this.vis!, 2);
     gl.activeTexture(gl.TEXTURE0);
     // Write rgb + alpha (beam haze) as is.
     gl.disable(gl.BLEND);

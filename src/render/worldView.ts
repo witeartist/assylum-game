@@ -10,7 +10,7 @@ import { tileCenter, tileIndex } from "../core/geom";
 import { Rng } from "../core/rng";
 import { GENERATED_SURFACE_TILES, GENERATED_SURFACE_TILES_BY_KEY } from "../data/assets";
 import { CORRIDOR_FLOOR, DECAL_DENSITY, DECAL_KEYS, DECAL_TILES, ROOMS, WALL_FACE, WALL_TOP, type DecalKind } from "../data/rooms";
-import { LAMP_ART } from "../data/furniture";
+import { LAMP_ART, WALL_DECOR, WALL_DECOR_SHARE } from "../data/furniture";
 import type { World } from "../game/World";
 import { buildRoomLookup } from "../world/level";
 import { DEPTH } from "../ui/theme";
@@ -24,6 +24,10 @@ const AO_RES = 8;      // AO texels per tile
 const AO_RADIUS = 3;   // blur radius, AO texels
 const AO_STRENGTH = 0.55;
 const CAP_TINT = 0x6a6a6a;
+/** Door frames and broken wall edges. */
+const FRAME = 0x4a4f4c;
+const FRAME_DARK = 0x16191a;
+const BROKEN = 0x2c2d2c;
 
 interface Stamp {
   key: string;
@@ -194,6 +198,9 @@ export class WorldView {
     }
     this.buildDoors();
     this.buildLamps();
+    this.buildFrames(solid);
+    this.buildBreaches(vrng);
+    this.buildDecor(solid, vrng);
     world.events.on("doorOpened", ({ index }) => { this.doorParts[index]?.forEach(p => p.destroy()); });
   }
 
@@ -224,6 +231,75 @@ export class WorldView {
       const door = placeStanding(scene, inHorizontalWall ? "interactive/door_metal_h" : "interactive/door_metal_v", x + TILE / 2, base, TILE * (inHorizontalWall ? 1.15 : 0.8));
       return [backing, door];
     }));
+  }
+
+  /**
+   * Door frames: posts at the sides of every doorway that has (or had) a door, and a header beam
+   * across the top — the wall goes on above the door, so it hides the head of whoever walks under.
+   */
+  private buildFrames(solid: (c: number, r: number) => boolean): void {
+    const { scene, level } = this.world;
+    const g = scene.add.graphics().setDepth(DEPTH.caps + 2);
+    const runs = [...level.gates.map(d => ({ tiles: d.tiles, horizontal: d.horizontal })),
+      ...level.lockedDoors.map(d => ({ tiles: d.doorTiles, horizontal: d.doorTiles.every(t => !solid(t.col, t.row - 1) || !solid(t.col, t.row + 1)) }))];
+    for (const { tiles, horizontal } of runs) {
+      const xs = tiles.map(t => t.col), ys = tiles.map(t => t.row);
+      const c0 = Math.min(...xs), c1 = Math.max(...xs) + 1, r0 = Math.min(...ys), r1 = Math.max(...ys) + 1;
+      if (horizontal) {
+        const top = r0 * TILE - H, x0 = c0 * TILE, x1 = c1 * TILE;
+        g.fillStyle(FRAME, 1).fillRect(x0, top, x1 - x0, 5);                          // header beam
+        g.fillStyle(FRAME_DARK, 1).fillRect(x0, top + 5, x1 - x0, 2);
+        g.fillStyle(FRAME, 1).fillRect(x0, top, 4, r1 * TILE - top).fillRect(x1 - 4, top, 4, r1 * TILE - top); // posts
+      } else {
+        const x0 = c0 * TILE, x1 = c1 * TILE, top = r0 * TILE - H, bottom = r1 * TILE - H;
+        g.fillStyle(FRAME, 1).fillRect(x0, top, x1 - x0, 4).fillRect(x0, bottom - 4, x1 - x0, 4); // posts, seen from above
+        g.fillStyle(FRAME_DARK, 0.9).fillRect(x0, top, 2, bottom - top).fillRect(x1 - 2, top, 2, bottom - top);
+      }
+    }
+  }
+
+  /** Holes knocked through walls: jagged edges and rubble on both sides. */
+  private buildBreaches(rng: Rng): void {
+    const { scene, level } = this.world;
+    const g = scene.add.graphics().setDepth(DEPTH.caps + 2);
+    for (const t of level.breaches) {
+      const x = t.col * TILE, top = t.row * TILE - H, bottom = top + TILE;
+      // Broken chunks sticking into the gap from the wall ends above and below.
+      for (const [y, dir] of [[top, 1], [bottom, -1]] as [number, number][]) {
+        g.fillStyle(BROKEN, 1).beginPath();
+        g.moveTo(x, y);
+        for (let i = 0; i <= 4; i++) g.lineTo(x + (TILE * i) / 4, y + dir * rng.range(2, 9));
+        g.lineTo(x + TILE, y);
+        g.closePath().fillPath();
+      }
+      for (let i = 0; i < 2; i++) {
+        const d = scene.add.image(x + rng.range(0, TILE), t.row * TILE + rng.range(4, TILE - 4), "decals/rubble").setDepth(DEPTH.floorObjects);
+        d.setScale(TILE * rng.range(0.6, 0.9) / Math.max(d.width, d.height)).setRotation(rng.range(0, 6.28));
+      }
+    }
+  }
+
+  /** Wall decor on the front of north walls: windows, boards, pipes… (only art that exists). */
+  private buildDecor(solid: (c: number, r: number) => boolean, rng: Rng): void {
+    const { scene, level } = this.world;
+    const keys = WALL_DECOR.filter(k => scene.textures.exists(k) && !isPlaceholder(k));
+    if (keys.length === 0) return;
+    const busy = new Set([...level.lights.map(l => tileIndex(l.col, l.row)), tileIndex(level.exitTile.col, level.exitTile.row),
+      tileIndex(level.exitTile.col + 1, level.exitTile.row), ...level.lockedDoors.map(d => tileIndex(d.terminalTile.col, d.terminalTile.row)),
+      ...(level.fuseBox ? [tileIndex(level.fuseBox.col, level.fuseBox.row)] : []), ...level.hidingSpots.map(t => tileIndex(t.col, t.row))]);
+    for (const room of level.rooms) {
+      if (!rng.chance(WALL_DECOR_SHARE)) continue;
+      const row = room.y + 1;
+      const cols = Array.from({ length: room.w - 2 }, (_, i) => room.x + 1 + i)
+        .filter(c => solid(c, row - 1) && !solid(c, row) && !busy.has(tileIndex(c, row)));
+      if (cols.length === 0) continue;
+      const c = rng.pick(cols), key = rng.pick(keys);
+      busy.add(tileIndex(c, row));
+      // Fits the front of the wall: as tall as it, keeping the picture's proportions.
+      const src = scene.textures.get(key).getSourceImage();
+      const h = H - 3, w = Math.min(TILE * 0.95, h * src.width / src.height);
+      placeStanding(scene, key, (c + 0.5) * TILE, row * TILE - 2, w).setDepth(DEPTH.floor + 1);
+    }
   }
 
   /** Lamp fixtures on the wall above each lamp. */

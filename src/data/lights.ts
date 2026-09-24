@@ -9,10 +9,13 @@ export const LIGHTS = {
   flashlight: { color: [1.0, 0.9, 0.72],   intensity: 1.2 },
   /** Light spilling around a flashlight holder. */
   spill:      { color: [1.0, 0.9, 0.72],   intensity: 0.4, radius: 1.4 },
-  /** Night vision around the local runner (only the viewer sees it). */
-  personal:   { color: [0.42, 0.48, 0.62], intensity: 0.6, radius: 2.8 },
+  /** Eyes used to the dark: a small circle around the local runner (only the viewer sees it). */
+  personal:   { color: [0.42, 0.48, 0.62], intensity: 0.5, radius: 2.2 },
   /** The hunter sees in the dark further (only the viewer sees it). */
-  hunterEyes: { color: [0.95, 0.55, 0.5],  intensity: 0.75, radius: 6 },
+  hunterEyes: { color: [0.95, 0.55, 0.5],  intensity: 0.7, radius: 5.2 },
+  glowstick:  { color: [0.35, 1.0, 0.45],  intensity: 0.85, radius: 3 },
+  /** A fuse lying on the floor gives off a faint electric glint. */
+  fuse:       { color: [0.45, 0.8, 1.0],   intensity: 0.45, radius: 1.1 },
   foxFlash:   { color: [1.0, 0.92, 0.86],  intensity: 1.8 },
   terminal:   { color: [0.2, 1.0, 0.5],    intensity: 0.7, radius: 1.8 },
   exitOpen:   { color: [0.35, 1.0, 0.45],  intensity: 1.1, radius: 3.5 },

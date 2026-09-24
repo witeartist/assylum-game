@@ -1,41 +1,123 @@
-// Boss (Желочь): slow, sees further than the hunter, goes straight for the nearest runner.
+// Boss (Желочь). Slow, but it never stops: it follows the scent trail of the nearest runner a
+// few seconds behind, hears far and sees in the dark. When it sees you it rushes — faster than
+// you walk — then has to catch its breath. It stops at the locker where your trail ends and
+// may tear it open. The lamps around it stutter and die down: that is how you know it's near.
 import { TILE } from "../core/constants";
 import { dist, worldToTile } from "../core/geom";
-import type { Vec2 } from "../core/types";
-import { BOSS_SIGHT_BONUS } from "../data/balance";
-import type { Actor, Brain } from "../entities/Actor";
+import { BOSS_AI, DARK_SIGHT, NOISE } from "../data/balance";
+import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
-import { findPath } from "../world/grid";
-import { chooseFarRoom } from "./goals";
-import { canSee } from "./perception";
+import type { HideSpot } from "../systems/hiding";
+import { MonsterBrain, NOISE_INTEREST } from "./monster";
+import { sees, type SightSpec } from "./senses";
 
-export class BossAI implements Brain {
-  state: "hunt" | "roam" = "roam";
+type State = "stalk" | "rush" | "rest" | "investigate" | "check" | "stunned";
 
-  constructor(private world: World, private actor: Actor) {}
+/** It follows the trail this many seconds behind the runner. */
+const TRAIL_LAG = 5;
+
+export class BossAI extends MonsterBrain {
+  state: State = "stalk";
+  private target: Actor | null = null;
+  private checkSpot: HideSpot | null = null;
+  private triedSpots = new Map<HideSpot, number>();
+
+  constructor(world: World, actor: Actor) { super(world, actor); }
+
+  private spec(): SightSpec {
+    const d = this.world.diff;
+    return { fovHalf: BOSS_AI.fovHalf, range: (d.foxSight + 4) * TILE, dark: DARK_SIGHT.boss * TILE, near: TILE * 1.6 };
+  }
 
   update(dt: number): void {
     const w = this.world, a = this.actor;
-    const range = (w.diff.foxSight + BOSS_SIGHT_BONUS) * TILE;
-    let target: Vec2 | null = null, bestD = Infinity;
-    for (const r of w.runners()) {
-      if (!r.inPlay || r.hiding) continue;
-      const p = r.authPos, d = dist(a, p);
-      if (d < bestD && canSee(w, a, p, range)) { bestD = d; target = p; }
-    }
-    this.state = target ? "hunt" : "roam";
+    this.tick(dt);
+    if (a.stunned > 0) { a.halt(); this.enter("stunned"); return; }
+    if (this.state === "stunned") this.enter("stalk");
 
-    a.pathTimer -= dt;
-    if (a.pathTimer <= 0 || a.path.length === 0) {
-      const from = worldToTile(a);
-      if (target) {
-        a.path = findPath(w.grid, from, worldToTile(target));
-        a.pathTimer = 0.4;
-      } else {
-        a.path = findPath(w.grid, from, chooseFarRoom(w.rng, w.level, from, 8));
-        a.pathTimer = w.rng.range(2, 3);
+    let seen: Actor | null = null, bestD = Infinity;
+    for (const r of w.runners()) {
+      if (!sees(w, a, r, this.spec())) continue;
+      const d = dist(a, r.authPos);
+      if (d < bestD) { bestD = d; seen = r; }
+    }
+    for (const e of this.heard(w.diff.hearing * BOSS_AI.hearing)) this.notice(e.x, e.y, NOISE_INTEREST[e.kind] ?? 1, null);
+
+    if (seen) {
+      this.target = seen;
+      if (this.state !== "rush" && this.state !== "rest") {
+        this.enter("rush");
+        w.noise.emit(a.x, a.y, NOISE.bossStep.radius + 3, "monster", a);
+        if (w.local.inPlay && dist(w.local, a) < TILE * 12) w.shake(350, 0.012);
       }
     }
-    a.followPath(a.speed, dt);
+
+    switch (this.state) {
+      case "rush": {
+        const p = (seen ?? this.target)?.authPos;
+        if (p) this.charge(p, "run", dt);
+        if (this.stateT > BOSS_AI.rushTime) this.enter("rest");
+        break;
+      }
+      case "rest": {
+        const p = this.target?.authPos;
+        if (p) this.charge(p, "sneak", dt); else a.halt();
+        if (this.stateT > BOSS_AI.rushRest) this.enter(seen ? "rush" : "stalk");
+        break;
+      }
+      case "investigate": {
+        const c = this.clue!;
+        if (this.phase === 0) { if (this.goTo(this.walkableNear(c), "walk", dt)) { this.phase = 1; this.waitT = 1.5; } }
+        else { this.lookAround(dt, 1.4); if ((this.waitT -= dt) <= 0) this.enter("stalk"); }
+        break;
+      }
+      case "check": this.check(dt); break;
+      default: this.stalk(dt);
+    }
+  }
+
+  /** Straight at the target when close, along a path otherwise. */
+  private charge(p: { x: number; y: number }, gait: "run" | "sneak", dt: number): void {
+    const a = this.actor;
+    if (dist(a, p) < TILE * 1.2) { a.gait = gait; a.move(p.x - a.x, p.y - a.y, a.gaitSpeed()); }
+    else this.goTo(worldToTile(p), gait, dt, 0.3);
+    this.face(p, dt);
+  }
+
+  /** Follow the scent of the nearest runner, a few seconds behind them. */
+  private stalk(dt: number): void {
+    const w = this.world, a = this.actor;
+    const c = this.clue;
+    if (c && this.t - c.t < 0.05 && c.strength >= 2) { this.enter("investigate"); return; }
+    let prey: Actor | null = null, bestD = Infinity;
+    for (const r of w.runners()) {
+      if (!r.inPlay) continue;
+      const d = dist(a, r.authPos);
+      if (d < bestD) { bestD = d; prey = r; }
+    }
+    if (!prey) { a.halt(); return; }
+    const spot = prey.hiding ? w.hiding.spotOf(prey) : null;
+    if (spot && dist(a, spot) < TILE * 1.8 && this.t - (this.triedSpots.get(spot) ?? -999) > 25) {
+      // The trail ends at this locker.
+      this.triedSpots.set(spot, this.t);
+      if (w.rng.chance(0.55)) { this.checkSpot = spot; this.enter("check"); return; }
+    }
+    const mark = w.scent.pointAgo(prey, dist(a, prey.authPos) < TILE * 6 ? 1.5 : TRAIL_LAG) ?? prey.authPos;
+    if (this.goTo(this.walkableNear(mark), "walk", dt, 1)) this.lookAround(dt, 1.2);
+  }
+
+  private check(dt: number): void {
+    const w = this.world, a = this.actor, s = this.checkSpot;
+    if (!s) { this.enter("stalk"); return; }
+    if (this.phase === 0) {
+      if (dist(a, s) > TILE * 1.1 && !this.goTo(this.walkableNear(s), "walk", dt, 0.4)) return;
+      a.halt();
+      w.hiding.check(s, a);
+      this.phase = 1;
+      this.waitT = 1.4;
+      return;
+    }
+    a.halt();
+    if ((this.waitT -= dt) <= 0) { this.checkSpot = null; this.enter("stalk"); }
   }
 }

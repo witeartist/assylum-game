@@ -2,7 +2,7 @@
 import { tileCenter } from "../core/geom";
 import type { Tile } from "../core/types";
 import { CHARACTERS, BOSS_ID, HUNTER_ID, type CharacterId } from "../data/characters";
-import { BOT_SPEED_RANGE, RUNNER_SPEED } from "../data/balance";
+import { BOSS_RUSH, BOT_SPEED_RANGE, HUNTER_WALK, RUNNER_RUN, RUNNER_WALK } from "../data/balance";
 import { Actor, type Control } from "../entities/Actor";
 import { RunnerBot } from "../ai/runnerBot";
 import { HunterAI } from "../ai/hunter";
@@ -12,15 +12,17 @@ import type { World } from "./World";
 export const HUNTER_AI_ID = "ai:fox";
 export const BOSS_AI_ID = "ai:boss";
 
-function speedFor(world: World, id: CharacterId): number {
-  const role = CHARACTERS[id].role;
-  return role === "hunter" ? world.diff.foxSpeed : role === "boss" ? world.diff.bossSpeed : RUNNER_SPEED;
+/** Walking and running speed of a character, px/s (`mul` = a bot's personal pace). */
+function speedsFor(world: World, id: CharacterId, mul = 1): { walk: number; run: number } {
+  const def = CHARACTERS[id];
+  if (def.role === "hunter") return { walk: world.diff.foxSpeed * HUNTER_WALK, run: world.diff.foxSpeed };
+  if (def.role === "boss") return { walk: world.diff.bossSpeed, run: world.diff.bossSpeed * BOSS_RUSH };
+  const k = (def.ability?.speed ?? 1) * mul;
+  return { walk: RUNNER_WALK * k, run: RUNNER_RUN * k };
 }
 
-function spawn(world: World, id: string, character: CharacterId, control: Control, tile: Tile, speed?: number): Actor {
-  const a = new Actor(world.scene, {
-    id, def: CHARACTERS[character], control, pos: tileCenter(tile), speed: speed ?? speedFor(world, character),
-  });
+function spawn(world: World, id: string, character: CharacterId, control: Control, tile: Tile, pace = 1): Actor {
+  const a = new Actor(world.scene, { id, def: CHARACTERS[character], control, pos: tileCenter(tile), ...speedsFor(world, character, pace) });
   if (control !== "remote") world.collision.collide(a);
   return world.addActor(a);
 }
@@ -42,7 +44,7 @@ export function spawnRemotePlayer(world: World, id: string, character: Character
 
 export function spawnRunnerBot(world: World, character: CharacterId, tile: Tile): Actor {
   const [lo, hi] = BOT_SPEED_RANGE;
-  const a = spawn(world, "bot:" + character, character, "bot", tile, RUNNER_SPEED * world.rng.range(lo, hi));
+  const a = spawn(world, "bot:" + character, character, "bot", tile, world.rng.range(lo, hi));
   a.brain = new RunnerBot(world, a);
   return a;
 }

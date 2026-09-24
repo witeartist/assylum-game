@@ -6,25 +6,31 @@ export interface Difficulty {
   id: DifficultyId;
   label: string;
   tone: Tone;
-  /** Hunter speed, px/s. */
+  /** Hunter full (chase) speed, px/s. It patrols slower. */
   foxSpeed: number;
-  /** Boss speed, px/s. */
+  /** Boss stalking speed, px/s. It rushes faster. */
   bossSpeed: number;
   /** Seconds until the boss wakes up. */
   bossDelay: number;
   keyCount: number;
-  /** Reserved for extra objectives (fuses / power parts), not used yet. */
-  partCount: number;
-  /** Runner view distance, tiles. */
+  /** Fuses to find and plug into the fuse box before the exit has power (0 = none). */
+  fuseCount: number;
+  /** Items lying around the level. */
+  itemCount: number;
+  /** How far away lamp-lit places are still visible, tiles. */
   sight: number;
-  /** Hunter view distance, tiles. */
+  /** How far the AI hunter sees lit runners, tiles. */
   foxSight: number;
+  /** Multiplier on how far the AI hears. */
+  hearing: number;
+  /** Seconds a runner must stay in view before the AI hunter recognises it. */
+  reaction: number;
 }
 
 export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
-  easy:   { id: "easy",   label: "ЛЕГКО",  tone: "good", foxSpeed: 144, bossSpeed: 55,  bossDelay: 150, keyCount: 3, partCount: 0, sight: 13, foxSight: 12 },
-  normal: { id: "normal", label: "НОРМА",  tone: "warn", foxSpeed: 144, bossSpeed: 80,  bossDelay: 90,  keyCount: 5, partCount: 3, sight: 10, foxSight: 16 },
-  hard:   { id: "hard",   label: "СЛОЖНО", tone: "bad",  foxSpeed: 144, bossSpeed: 105, bossDelay: 50,  keyCount: 7, partCount: 5, sight: 7,  foxSight: 20 },
+  easy:   { id: "easy",   label: "ЛЕГКО",  tone: "good", foxSpeed: 108, bossSpeed: 48, bossDelay: 240, keyCount: 3, fuseCount: 2, itemCount: 16, sight: 13, foxSight: 11, hearing: 0.8,  reaction: 0.6 },
+  normal: { id: "normal", label: "НОРМА",  tone: "warn", foxSpeed: 118, bossSpeed: 58, bossDelay: 180, keyCount: 4, fuseCount: 3, itemCount: 14, sight: 11, foxSight: 14, hearing: 1,    reaction: 0.4 },
+  hard:   { id: "hard",   label: "СЛОЖНО", tone: "bad",  foxSpeed: 128, bossSpeed: 70, bossDelay: 130, keyCount: 5, fuseCount: 4, itemCount: 11, sight: 9,  foxSight: 17, hearing: 1.25, reaction: 0.25 },
 };
 
 export const DIFFICULTY_ORDER: DifficultyId[] = ["easy", "normal", "hard"];

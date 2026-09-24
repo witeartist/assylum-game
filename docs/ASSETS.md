@@ -9,7 +9,9 @@
 `public/assets/` и обновит манифест. Категорию он определяет по имени файла, так что файл в чужой
 папке тоже попадёт куда надо. Варианты складывай в `art/_variants/` — их скрипт пропускает.
 
-**Статус:** все 90 картинок P1–P3 получены и подключены. Не хватает персонажей (раздел F) и звуков.
+**Статус:** все 90 картинок P1–P3 получены и подключены. Новое для помещений — **раздел H**
+(двери, щиток, шкафчики сбоку, декор стен, новые типы комнат). Не хватает персонажей (раздел F)
+и звуков.
 
 **Приоритеты**
 - **P1** — нужно для этапа 2 (графика 2.5D), делать первым.
@@ -243,6 +245,78 @@
 | `panel.png` | 1536×1024 | dark scratched metal plate panel with rivets in the corners, empty center, for UI background, front view, flat lighting |
 | `button.png` | 1536×1024 | wide rectangular button made of dark worn metal with a thin red rim, empty, front view |
 | `icon_key.png`, `icon_runner.png`, `icon_skull.png`, `icon_boss.png`, `icon_battery.png`, `icon_stamina.png`, `icon_flashlight.png`, `icon_hide.png` | 1024² | simple bold game UI icon of <key / running person / skull / monster face / battery / lungs / flashlight / closed locker>, off-white with dark outline, flat, transparent background |
+
+---
+
+## H. Дозаказ для помещений (после этапа 3)
+
+Всё в стиле уже готовых картинок: **прикладывай указанный файл как референс стиля** (он лежит в
+`art/<папка>/`), общий блок — из раздела C. Пока картинки нет, в игре стоит заглушка или объект
+просто не рисуется; новая картинка встаёт на место без правки кода.
+
+**H1. Двери в проёмах (P1)** — папка `interactive/`, референс `art/interactive/door_metal_h.png`
+и `door_metal_v.png` (та же манера, но дерево, а не металл). Сейчас это рисованные кодом заглушки.
+
+| Файл | Клетки | Размер | `<OBJECT>` |
+|---|---|---|---|
+| `door_wood_h.png` | 1×1 | 1024×1536 | old wooden hospital door, closed, front view, small wired-glass window at eye level, chipped white-green paint, dented metal kick plate, in a horizontal wall |
+| `door_wood_h2.png` | 2×1 | 1536×1024 | the same style, a double swing door (two leaves), closed, two round wired-glass windows |
+| `door_wood_h_open.png` | ⅕×1 | 1024×1536 | the same door swung fully open, seen edge-on: a thin vertical door leaf standing against the frame |
+| `door_wood_v.png` | ⅕×1 | 1024×1536 | the same door closed in a vertical wall, seen edge-on from the side: a thin tall slab with a handle |
+| `door_wood_v_open.png` | 1×1 | 1024² | the same door swung open into the room, seen from the 3/4 camera, the leaf sticking out perpendicular to the wall |
+
+**H2. Щиток и шкафчики (P1)** — папка `interactive/`.
+
+| Файл | Клетки | Размер | Референс | `<OBJECT>` |
+|---|---|---|---|---|
+| `fuse_box.png` | 1×1 | 1024² | `terminal.png` | wall-mounted electrical fuse box, lid open, three empty ceramic fuse slots, red warning pictogram (lightning bolt, no letters), indicator lamps off |
+| `fuse_box_on.png` | 1×1 | 1024² | `fuse_box.png` | the same fuse box with all fuses in place and small green indicator lamps glowing |
+| `locker_side_closed.png` | ⅔×1 | 1024×1536 | `locker_closed.png` | the same tall metal staff locker standing against a wall on its left, seen from the side at the 3/4 angle: narrow side panel and the edge of the doors |
+| `locker_side_open.png` | ⅔×1 | 1024×1536 | `locker_open.png` | the same side view with the door half open |
+
+**H3. Мебель боком (P2)** — для стен слева и справа (сейчас такие вещи стоят только у северной
+стены). Папка `props/`, референс — фронтальная версия того же предмета, «повернуть на 90°».
+
+| Файл | Клетки | Размер | `<OBJECT>` |
+|---|---|---|---|
+| `shelf_boxes_side.png` | 1×2 | 1024×1536 | the metal shelf with cardboard boxes from `shelf_boxes.png`, standing against a wall on its left, seen from the side |
+| `morgue_fridge_side.png` | 1×2 | 1024×1536 | the morgue refrigerator from `morgue_fridge.png`, against a wall on its left, doors facing right |
+| `medicine_cabinet_side.png` | 1×1 | 1024² | the medicine cabinet from `medicine_cabinet.png`, against a wall on its left |
+| `sink_side.png` | 1×1 | 1024² | the sink from `sink.png`, mounted on a wall on its left |
+| `radiator_side.png` | 1×1 | 1024² | the radiator from `radiator.png`, on a wall on its left |
+
+**H4. Декор стен (P2)** — вешается на переднюю грань северных стен, не мешает ходить. Папка
+`props/`, референс `art/surfaces/wall_face.png` (цвет стены) и `lamp_fluorescent.png` (масштаб).
+Размер 1024², прозрачный фон, фронтальный вид.
+
+| Файл | `<OBJECT>` |
+|---|---|
+| `decor_window_barred.png` | small barred window in a hospital wall, dirty glass, pitch-black night outside |
+| `decor_board.png` | notice board with pinned yellowed papers and a torn schedule |
+| `decor_clock.png` | round wall clock with a cracked glass, hands stopped |
+| `decor_pipes.png` | two rusty horizontal pipes with a valve wheel, seamless left–right |
+| `decor_extinguisher.png` | red fire extinguisher on a wall bracket |
+| `decor_marks.png` | scratch marks and a smeared bloody handprint on plaster (transparent around) |
+
+**H5. Новые типы комнат (P2)** — чтобы больница была необычнее. Пол — по правилам раздела A
+(референс `floor_ward.png`), мебель — раздел C (референс `bed_v_1.png`).
+
+| Файл | Папка | Клетки | `<OBJECT>` / описание |
+|---|---|---|---|
+| `floor_office.png` | surfaces | — | worn dark parquet floor with scratches and a faded carpet edge |
+| `desk.png` | props | 2×1 | doctor's wooden desk with papers, an old lamp and a rotary phone |
+| `filing_cabinet.png` | props | 1×1 | tall metal filing cabinet, one drawer pulled out, files spilling |
+| `bookshelf.png` | props | 2×1 | tall bookshelf with medical books and binders, against a wall |
+| `floor_hydro.png` | surfaces | — | small white ceramic floor tiles with rust-colored water stains and a drain grate |
+| `hydro_tub.png` | props | 1×2 | old hydrotherapy bathtub with a canvas cover and leather straps, psychiatric hospital |
+| `shower_stall.png` | props | 1×1 | tiled shower stall with a rusty shower head, against a wall |
+| `mattress_floor.png` | props | 1×2 | dirty thin mattress lying on the floor (flat) |
+
+**H6. Проломы (P3)** — папка `decals/`, строго сверху.
+
+| Файл | Описание |
+|---|---|
+| `breach_edge.png` | broken edge of a concrete wall seen from above: jagged chunks, exposed bricks and bent rebar, transparent around |
 
 ---
 

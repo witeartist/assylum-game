@@ -36,4 +36,8 @@ export class CollisionLayer {
   open(t: Tile): void {
     this.layer.removeTileAt(t.col, t.row, true, true);
   }
+
+  close(t: Tile): void {
+    this.layer.putTileAt(0, t.col, t.row).setCollision(true, true, true, true);
+  }
 }

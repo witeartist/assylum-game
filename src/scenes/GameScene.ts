@@ -26,12 +26,20 @@ import { Noise } from "../systems/noise";
 import { Vision } from "../systems/vision";
 import { InputSystem } from "../systems/input";
 import { NetSync } from "../systems/netsync";
+import { Vitals } from "../systems/vitals";
+import { Items } from "../systems/items";
+import { Power } from "../systems/power";
+import { Interact } from "../systems/interact";
+import { Gates } from "../systems/gates";
+import { Scent } from "../ai/scent";
 import { updateCatches } from "../systems/catches";
 import { bindEffects } from "../systems/effects";
 
 export interface GameSceneData {
   character: CharacterId;
   difficulty: DifficultyId;
+  /** Replay a particular level (solo); random otherwise. */
+  seed?: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -53,7 +61,8 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     const start = session.active ? session.start : null;
     const diff = DIFFICULTIES[start ? start.difficulty : this.params.difficulty];
-    const level = generateLevel(start ? start.seed : randomSeed(), diff.keyCount);
+    const seed = start ? start.seed : this.params.seed ?? randomSeed();
+    const level = generateLevel(seed, { keys: diff.keyCount, fuses: diff.fuseCount, items: diff.itemCount });
     const net: NetMode = !start ? "solo" : session.isHost ? "host" : "client";
     const w = new World(this, level, diff, net);
 
@@ -64,9 +73,14 @@ export class GameScene extends Phaser.Scene {
     w.lighting = new Lighting(w);
     new WorldView(w);
     w.collision = new CollisionLayer(this, w.grid);
+    w.gates = new Gates(w);
     w.hiding = new Hiding(w);
     w.doors = new Doors(w);
     w.objectives = new Objectives(w);
+    w.power = new Power(w);
+    w.items = new Items(w);
+    w.noise = new Noise(w);
+    w.scent = new Scent(w);
 
     if (start) {
       for (const [id, p] of Object.entries(start.players)) {
@@ -86,7 +100,8 @@ export class GameScene extends Phaser.Scene {
 
     w.round = new Round(w);
     w.director = new Director(w);
-    w.noise = new Noise(w);
+    w.vitals = new Vitals(w);
+    w.interact = new Interact(w);
     w.vision = new Vision(w);
     bindEffects(w);
     this.controls = new InputSystem(w);
@@ -113,15 +128,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tick(w: World, time: number, dt: number): void {
+    w.lighting.update(dt);
     this.controls.update();
+    w.hiding.holding = this.controls.holdingBreath;
     if (w.isAuthority) for (const a of w.actors) if (a.brain && a.inPlay) a.brain.update(dt);
+    w.vitals.update(dt);
+    w.items.update(dt);
+    w.power.update(dt);
+    w.hiding.update(dt);
+    w.doors.update(dt);
     w.objectives.update(dt);
     updateCatches(w);
     w.director.update(dt);
     w.foxFlash.update(dt);
-    w.lighting.update(dt);
     w.noise.update(dt);
-    w.vision.update();
+    w.scent.update(dt);
+    w.vision.update(dt);
     w.camera.update(dt);
     this.netsync?.update(time);
   }

@@ -1,6 +1,7 @@
 // GLSL for the lighting post-process. Pass 1 builds a low-resolution light map with ray-traced
-// wall shadows and the viewer's line of sight; pass 2 multiplies the scene by it and grades
-// the image (darkness, film grain, vignette, danger pulse).
+// wall shadows and the viewer's line of sight, per pixel — whatever the viewer can't see, or no
+// light reaches, is black. Pass 2 multiplies the scene by it and grades the image (darkness,
+// film grain, vignette, danger pulse).
 export const MAX_LIGHTS = 16;
 const MAX_STEPS = 40;
 
@@ -19,7 +20,6 @@ ${PRECISION}
 
 uniform sampler2D uMainSampler;
 uniform sampler2D uOcc;      // R: 1 wall, 0.6 door (solid, but lit like a wall front), 0 open (nearest)
-uniform sampler2D uVis;      // R: visible tile, G: explored tile (linear)
 uniform vec2 uMapSize;       // tiles
 uniform float uTile;         // world px per tile
 uniform float uWallH;        // wall height, world px
@@ -27,8 +27,9 @@ uniform vec4 uView;          // visible world rect: x, y, w, h
 uniform float uFlipY;
 uniform vec2 uViewer;        // eye position, world px
 uniform float uSight;        // lamp light fades beyond this distance, world px
-uniform float uMemory;       // brightness of remembered (explored, not visible) floor
 uniform float uTopLight;     // brightness of wall tops
+uniform vec3 uAmbient;       // light everywhere, even out of sight: 0 in play (screenshots only)
+uniform float uPhoto;        // 1 = screenshot mode: light every room, not only what the viewer sees
 uniform float uSoft;         // light jitter for soft shadow edges, world px
 uniform int uLightCount;
 uniform vec4 uLightA[MAX_LIGHTS];   // x, y, radius, intensity
@@ -70,7 +71,8 @@ float material(vec2 w, out vec2 g) {
   vec2 cell = floor(w / uTile);
   vec2 capCell = vec2(cell.x, floor((w.y + uWallH) / uTile));
   float cap = solidAt(capCell);
-  if (cap > 0.8) { g = (capCell + 0.5) * uTile; return 2.0; }
+  // Wall top: lit and seen like the floor right under it (per pixel, so no square edges).
+  if (cap > 0.8) { g = vec2(w.x, w.y + uWallH); return 2.0; }
   if (cap > 0.3) { g = vec2(w.x, (capCell.y + 1.0) * uTile + 0.5); return 1.0; }
   if (solidAt(cell) > 0.3) { g = vec2(w.x, (cell.y + 1.0) * uTile + 0.5); return 1.0; }
   g = w;
@@ -79,53 +81,50 @@ float material(vec2 w, out vec2 g) {
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
+// Light arriving at ground point g from one light (no shadow test). A: x, y, radius, intensity;
+// C: cone; lamp: 1 for lamps (they fade with view distance).
+float lightFrom(vec4 A, vec4 C, float lamp, vec2 g, float m, float sightFade) {
+  vec2 toL = A.xy - g;
+  float d = length(toL);
+  if (d >= A.z) return 0.0;
+  vec2 dir = -toL / max(d, 0.001);
+  float cone = smoothstep(C.z, C.w, dot(dir, C.xy));
+  float att = 1.0 - d / A.z;
+  att *= att;
+  if (m > 0.5 && m < 1.5) att *= clamp(toL.y / max(d, 1.0) * 1.5 + 0.25, 0.0, 1.0); // wall fronts face south
+  float k = A.w * att * cone;
+  if (lamp > 0.5) k *= sightFade;
+  return k;
+}
+
 void main() {
   vec2 uv = outTexCoord;
   vec2 w = uView.xy + vec2(uv.x, mix(uv.y, 1.0 - uv.y, uFlipY)) * uView.zw;
   vec2 g;
   float m = material(w, g);
-
-  if (m > 1.5) {
-    vec4 tv = texture2D(uVis, g / uTile / uMapSize);
-    float seen = max(tv.r, tv.g * 0.4);
-    gl_FragColor = vec4(vec3(uTopLight * seen) * 0.5, 0.0);
-    return;
-  }
-
-  float explored = texture2D(uVis, w / uTile / uMapSize).g;
-  float los = trace(g, uViewer);
-  if (los < 0.5) {
-    gl_FragColor = vec4(vec3(uMemory * explored) * 0.5, 0.0);
-    return;
-  }
-
-  float sightFade = 1.0 - smoothstep(uSight * 0.6, uSight * 1.15, length(g - uViewer));
-  float jitter = (hash(gl_FragCoord.xy) - 0.5) * uSoft;
+  float sightFade = uPhoto > 0.5 ? 1.0 : 1.0 - smoothstep(uSight * 0.7, uSight * 1.2, length(g - uViewer));
   vec3 sum = vec3(0.0);
+
+  // Out of the viewer's line of sight: nothing at all. (A wall top is seen only if the wall
+  // itself faces the viewer — the tops deep inside a wall mass stay black.)
+  if (uPhoto < 0.5 && trace(g, uViewer) < 0.5) { gl_FragColor = vec4(uAmbient * (m > 1.5 ? uTopLight : 1.0) * 0.5, 0.0); return; }
+
+  float jitter = (hash(gl_FragCoord.xy) - 0.5) * uSoft;
   float haze = 0.0;
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= uLightCount) break;
     vec4 A = uLightA[i];
-    vec2 toL = A.xy - g;
-    float d = length(toL);
-    if (d >= A.z) continue;
-    vec4 C = uLightC[i];
-    vec2 dir = -toL / max(d, 0.001);
-    float cone = smoothstep(C.z, C.w, dot(dir, C.xy));
-    if (cone <= 0.0) continue;
-    float att = 1.0 - d / A.z;
-    att *= att;
-    if (m > 0.5) att *= clamp(toL.y / max(d, 1.0) * 1.5 + 0.25, 0.0, 1.0); // wall fronts face south
-    vec2 side = vec2(-toL.y, toL.x) / max(d, 0.001);
-    float sh = trace(g, A.xy + side * jitter);
-    if (sh <= 0.0) continue;
     vec4 B = uLightB[i];
-    float k = A.w * att * cone;
-    if (B.a < 0.5) k *= sightFade;
+    float k = lightFrom(A, uLightC[i], B.a < 0.5 ? 1.0 : 0.0, g, m, sightFade);
+    if (k <= 0.0) continue;
+    vec2 toL = A.xy - g;
+    vec2 side = vec2(-toL.y, toL.x) / max(length(toL), 0.001);
+    if (trace(g, A.xy + side * jitter) <= 0.0) continue;
     sum += B.rgb * k;
-    if (B.a > 1.5) haze += k;
+    if (B.a > 1.5 && m < 0.5) haze += k;
   }
-  sum = max(sum, vec3(uMemory * explored));
+  sum += uAmbient;
+  if (m > 1.5) sum *= uTopLight;
   gl_FragColor = vec4(sum * 0.5, clamp(haze, 0.0, 1.0));
 }
 `;

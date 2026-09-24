@@ -59,6 +59,38 @@ export const PROP_ART: Record<string, () => HTMLCanvasElement> = {
     ctx.fillStyle = "#3c4448"; ctx.fillRect(4, 22, 16, 70); ctx.fillRect(100, 22, 16, 70);
     ctx.fillStyle = "#33ff66"; ctx.fillRect(44, 12, 32, 9);
   }),
+  // Wooden ward doors: front view (in a left–right wall), edge-on (in an up–down wall), and open.
+  "interactive/door_wood_h": () => box(40, 6, 54, "#4a3a2e", "#5c4636", ctx => {
+    ctx.fillStyle = "#4b392c"; ctx.fillRect(5, 11, 30, 45);
+    ctx.fillStyle = "#1a1f22"; ctx.fillRect(12, 16, 16, 12);
+    ctx.fillStyle = "rgba(160,190,200,0.25)"; ctx.fillRect(13, 17, 6, 10);
+    ctx.fillStyle = "#b9b09a"; ctx.fillRect(30, 34, 3, 2);
+    ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(20, 6, 1, 54);
+  }),
+  "interactive/door_wood_h2": () => box(72, 6, 54, "#4a3a2e", "#5c4636", ctx => {
+    ctx.fillStyle = "#4b392c"; ctx.fillRect(4, 11, 31, 45); ctx.fillRect(37, 11, 31, 45);
+    ctx.fillStyle = "#1a1f22"; ctx.beginPath(); ctx.arc(19, 24, 6, 0, 7); ctx.arc(53, 24, 6, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(35, 8, 2, 50);
+  }),
+  "interactive/door_wood_h_open": () => box(8, 4, 56, "#3a2d24", "#2c221b"),
+  "interactive/door_wood_v": () => box(10, 4, 56, "#4a3a2e", "#3a2d24", ctx => {
+    ctx.fillStyle = "#b9b09a"; ctx.fillRect(3, 30, 4, 2);
+  }),
+  "interactive/door_wood_v_open": () => box(34, 5, 30, "#4a3a2e", "#5c4636", ctx => {
+    ctx.fillStyle = "#1a1f22"; ctx.fillRect(10, 9, 14, 9);
+  }),
+  "interactive/fuse_box": () => box(40, 8, 48, "#3a4146", "#4b555b", ctx => {
+    ctx.fillStyle = "#2a3034"; ctx.fillRect(5, 13, 30, 38);
+    ctx.fillStyle = "#11161a"; for (let y = 17; y < 47; y += 8) ctx.fillRect(9, y, 22, 5);
+    ctx.fillStyle = "#e8c02a"; ctx.fillRect(12, 50, 16, 3);
+    ctx.fillStyle = "#ff4a3a"; ctx.fillRect(31, 15, 2, 2);
+  }),
+  "interactive/fuse_box_on": () => box(40, 8, 48, "#3a4146", "#4b555b", ctx => {
+    ctx.fillStyle = "#2a3034"; ctx.fillRect(5, 13, 30, 38);
+    ctx.fillStyle = "#c9b27a"; for (let y = 17; y < 47; y += 8) ctx.fillRect(9, y, 22, 5);
+    ctx.fillStyle = "#e8c02a"; ctx.fillRect(12, 50, 16, 3);
+    ctx.fillStyle = "#3dff7a"; ctx.fillRect(31, 15, 2, 2); ctx.fillRect(31, 20, 2, 2);
+  }),
   "props/lamp_fluorescent": () => {
     const [c, ctx] = canvas(64, 16);
     ctx.fillStyle = "#3a3f42"; ctx.fillRect(0, 2, 64, 12);

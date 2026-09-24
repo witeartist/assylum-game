@@ -1,4 +1,5 @@
-// Keys and the exit. Collect every key to open the exit; reach it to escape.
+// Keys and the exit. Collect every key — and restore the power, if the level has fuses — to open
+// the exit; reach it to escape.
 import type Phaser from "phaser";
 import { TILE } from "../core/constants";
 import { dist, tileCenter } from "../core/geom";
@@ -75,17 +76,24 @@ export class Objectives {
     const local = by === w.local;
     const byName = typeof by === "string" ? by : by ? by.def.name : null;
     w.events.emit("keyCollected", { index, by: byName, local, remote });
-    if (this.collected >= this.total) {
-      this.exit.open = true;
-      const sprite = this.exit.sprite;
-      sprite.setTexture("interactive/exit_door_open");
-      sprite.setScale(EXIT_WIDTH / sprite.width);
-      w.toast("ВЫХОД ОТКРЫТ! БЕГИ!", "good");
-      w.events.emit("exitOpened", {});
-    } else {
-      w.toast("Ключ " + this.collected + "/" + this.total + (byName && !local ? " — " + byName : ""), "key");
+    if (!this.tryOpenExit()) {
+      const more = this.collected >= this.total ? " — нужно питание: предохранители в щиток" : "";
+      w.toast("Ключ " + this.collected + "/" + this.total + (byName && !local ? " — " + byName : "") + more, "key");
     }
     if (local) w.shake(200, 0.005);
+    return true;
+  }
+
+  /** Open the exit once every key is in and the power is on. Returns whether it opened now. */
+  tryOpenExit(): boolean {
+    const w = this.world;
+    if (this.exit.open || this.collected < this.total || !w.power.on) return false;
+    this.exit.open = true;
+    const sprite = this.exit.sprite;
+    sprite.setTexture("interactive/exit_door_open");
+    sprite.setScale(EXIT_WIDTH / sprite.width);
+    w.toast("ВЫХОД ОТКРЫТ! БЕГИ!", "good");
+    w.events.emit("exitOpened", {});
     return true;
   }
 
