@@ -1,8 +1,6 @@
 // ============================================================
 //  ASSYLUM — config.ts — Constants & shared state
 // ============================================================
-import Phaser from "phaser";
-
 export const TILE   = 32;
 export const MAP_W  = 80;
 export const MAP_H  = 50;
@@ -32,6 +30,11 @@ export const DIFFICULTY: Record<string, DifficultyPreset> = {
 export let currentDifficulty = "normal";
 export function setDifficulty(d: string) { currentDifficulty = d; }
 
+// ── Cast ─────────────────────────────────────────────────────
+export const RUNNER_NAMES = ["Naumi", "Kuruna", "Wite", "Sumrak", "Yoko"];
+export const HUNTER_NAME = "Foxmind";
+export const BOSS_NAME = "Желочь";
+
 export const RUNNER_SPD = 120;
 export const SPRINT_MULT = 1.6;
 export const SNEAK_MULT = 0.5;
@@ -39,6 +42,11 @@ export const SNEAK_MULT = 0.5;
 export function getDiff(): DifficultyPreset { return DIFFICULTY[currentDifficulty]; }
 
 export const HIDE_KEY = "e";
+
+/** Seconds a runner bot needs to hack a terminal and open its locked door. */
+export const BOT_HACK_TIME = 6;
+/** Host-side catch distance in multiplayer (generous to absorb network latency). */
+export const MP_CATCH_RADIUS = TILE * 1.2;
 
 export const COLORS: Record<string, string> = {
   Naumi:   "#e879a0",
@@ -107,6 +115,12 @@ export function shuffle<T>(arr: T[]): T[] {
 export function tileKey(c: number, r: number): string { return `${c},${r}`; }
 export function sameTile(a: Tile, b: Tile): boolean { return a.col === b.col && a.row === b.row; }
 export function tileDist(a: Tile, b: Tile): number { return Math.abs(a.col - b.col) + Math.abs(a.row - b.row); }
+
+/** Replace one character of a level row (rows are immutable strings). */
+export function setTileChar(rows: string[], t: Tile, ch: string) {
+  const row = rows[t.row];
+  rows[t.row] = row.slice(0, t.col) + ch + row.slice(t.col + 1);
+}
 
 export function tileCenter(c: number, r: number): { x: number; y: number } {
   return { x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 };

@@ -2,9 +2,10 @@
 //  ASSYLUM — level.ts — Hospital-style level generation
 // ============================================================
 import {
-  MAP_W, MAP_H, TILE, ROOM_TYPES, ROOM_LABELS, ROOM_PROPS,
+  MAP_W, MAP_H, ROOM_TYPES, ROOM_LABELS, ROOM_PROPS,
   tileKey, tileDist, randInt, shuffle, Tile,
 } from "./config";
+import { distanceMap, distanceTo } from "./ai";
 
 // ── Types ────────────────────────────────────────────────────
 export interface Room {
@@ -21,6 +22,8 @@ export interface Decoration {
 export interface LockedDoor {
   doorTiles: Tile[];
   terminalTile: Tile;
+  /** Index into LevelData.keyTiles of the key sealed behind this door. */
+  keyIndex: number;
 }
 
 export interface BedSpot {
@@ -352,26 +355,66 @@ function findRoomEntryTiles(grid: string[][], room: Room): Tile[] {
   return entries;
 }
 
-function pickLockedDoors(grid: string[][], keyRooms: Room[]): LockedDoor[] {
-  const locked: LockedDoor[] = [];
-  const count = Math.min(2, keyRooms.length);
-  for (let i = 0; i < count; i++) {
-    const room = keyRooms[i];
-    const entries = findRoomEntryTiles(grid, room);
-    if (entries.length === 0) continue;
-    const entry = entries[0];
-    let termTile: Tile | null = null;
-    for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
-      const nr = entry.row + dr, nc = entry.col + dc;
-      if (nr >= 0 && nr < MAP_H && nc >= 0 && nc < MAP_W &&
-          grid[nr][nc] !== '#' &&
-          !(nr >= room.y && nr < room.y + room.h && nc >= room.x && nc < room.x + room.w)) {
-        termTile = { col: nc, row: nr };
-        break;
-      }
+const MAX_LOCKED_DOORS = 2;
+
+/** Every floor tile on the room's outer ring — walling them all off seals the room. */
+function roomRingFloorTiles(grid: string[][], room: Room): Tile[] {
+  const tiles: Tile[] = [];
+  for (let r = room.y; r < room.y + room.h; r++)
+    for (let c = room.x; c < room.x + room.w; c++) {
+      const onRing = r === room.y || r === room.y + room.h - 1 || c === room.x || c === room.x + room.w - 1;
+      if (onRing && grid[r][c] !== "#") tiles.push({ col: c, row: r });
     }
-    if (!termTile) continue;
-    locked.push({ doorTiles: entries, terminalTile: termTile });
+  return tiles;
+}
+
+function withWalls(grid: string[][], tiles: Tile[]): string[][] {
+  const g = grid.map(r => r.slice());
+  for (const t of tiles) g[t.row][t.col] = "#";
+  return g;
+}
+
+const isInside = (t: Tile, room: Room) =>
+  t.col >= room.x && t.col < room.x + room.w && t.row >= room.y && t.row < room.y + room.h;
+
+/** A free floor tile just outside one of the door tiles, reachable while the door is shut. */
+function pickTerminalTile(closed: string[][], room: Room, doorTiles: Tile[], dist: Int32Array, usedTiles: Set<string>): Tile | null {
+  for (const d of shuffle(doorTiles)) {
+    for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const t = { col: d.col + dc, row: d.row + dr };
+      if (t.row < 0 || t.row >= MAP_H || t.col < 0 || t.col >= MAP_W) continue;
+      if (isInside(t, room) || closed[t.row][t.col] === "#" || usedTiles.has(tileKey(t.col, t.row))) continue;
+      if (distanceTo(dist, t) >= 0) return t;
+    }
+  }
+  return null;
+}
+
+/**
+ * Seal up to MAX_LOCKED_DOORS key rooms behind terminal-operated doors. A room is only
+ * locked if that really cuts its key off while every spawn, the exit, the other keys and
+ * all terminals stay reachable with every door shut — so a level can never soft-lock.
+ */
+function pickLockedDoors(
+  grid: string[][], keyRooms: Room[], keyTiles: Tile[], start: Tile, mustReach: Tile[], usedTiles: Set<string>,
+): LockedDoor[] {
+  const locked: LockedDoor[] = [];
+  let sealed: Tile[] = [];
+  for (let i = 0; i < keyRooms.length && locked.length < MAX_LOCKED_DOORS; i++) {
+    const room = keyRooms[i];
+    const doorTiles = roomRingFloorTiles(grid, room);
+    if (doorTiles.length === 0) continue;
+    const closed = withWalls(grid, sealed.concat(doorTiles));
+    const dist = distanceMap(closed, start);
+    if (distanceTo(dist, keyTiles[i]) >= 0) continue; // room leaks — locking it would be pointless
+    const terminalTile = pickTerminalTile(closed, room, doorTiles, dist, usedTiles);
+    if (!terminalTile) continue;
+    const freeKeys = keyTiles.filter((_, k) => k !== i && !locked.some(l => l.keyIndex === k));
+    const terminals = locked.map(l => l.terminalTile).concat(terminalTile);
+    if (![...mustReach, ...freeKeys, ...terminals].every(t => distanceTo(dist, t) >= 0)) continue;
+    usedTiles.add(tileKey(terminalTile.col, terminalTile.row));
+    sealed = sealed.concat(doorTiles);
+    locked.push({ doorTiles, terminalTile, keyIndex: i });
   }
   return locked;
 }
@@ -457,7 +500,13 @@ export function generateLevelData(keyCount: number): LevelData {
     if (keyRoomCandidates.length < keyCount) continue;
     const keyTiles = keyRoomCandidates.map(r => pickRoomTile(r, usedTiles));
 
-    const lockedDoors = pickLockedDoors(grid, keyRoomCandidates);
+    // With every door open the whole building must be connected.
+    const openDist = distanceMap(grid, playerSpawn);
+    if (![exitTile, ...keyTiles].every(t => distanceTo(openDist, t) >= 0)) continue;
+
+    const mustReach = [foxSpawn, bossSpawn, exitTile, ...npcSpawns];
+    const lockedDoors = pickLockedDoors(grid, keyRoomCandidates, keyTiles, playerSpawn, mustReach, usedTiles);
+    if (lockedDoors.length < Math.min(MAX_LOCKED_DOORS, keyCount)) continue;
     const decorations = buildRoomDecorations(rooms, usedTiles);
     const hidingSpots = placeHidingSpots(rooms, usedTiles);
     const bedSpots = placeBedSpots(rooms, usedTiles, grid);
@@ -473,11 +522,11 @@ export function generateLevelData(keyCount: number): LevelData {
     };
   }
 
-  return generateFallbackLevel();
+  return generateFallbackLevel(keyCount);
 }
 
 // ── Fallback ─────────────────────────────────────────────────
-function generateFallbackLevel(): LevelData {
+export function generateFallbackLevel(keyCount: number): LevelData {
   const grid = makeEmptyGrid();
   const rooms: Room[] = [
     { x: 3,  y: 3,  w: 8,  h: 7, type: "ward" },
@@ -534,8 +583,10 @@ function generateFallbackLevel(): LevelData {
   const npcSpawns   = [rooms[2], rooms[5], rooms[9], rooms[16]].map(r => pickRoomTile(r, usedTiles));
   const exitTile    = pickRoomTile(rooms[18], usedTiles);
   const bossSpawn   = pickRoomTile(rooms[14], usedTiles);
-  const keyTiles    = [rooms[3], rooms[7], rooms[11], rooms[15], rooms[20]].map(r => pickRoomTile(r, usedTiles));
-  const lockedDoors = pickLockedDoors(grid, [rooms[3], rooms[7]]);
+  // Rooms not used by spawns/exit, in preferred order; the level needs exactly keyCount keys.
+  const keyRooms    = [3, 7, 11, 15, 20, 1, 4, 6, 8, 10, 12, 13, 17, 19, 21].slice(0, keyCount).map(i => rooms[i]);
+  const keyTiles    = keyRooms.map(r => pickRoomTile(r, usedTiles));
+  const lockedDoors = pickLockedDoors(grid, keyRooms, keyTiles, playerSpawn, [foxSpawn, bossSpawn, exitTile, ...npcSpawns], usedTiles);
   const decorations = buildRoomDecorations(rooms, usedTiles);
   const hidingSpots = placeHidingSpots(rooms, usedTiles);
   const bedSpots    = placeBedSpots(rooms, usedTiles, grid);

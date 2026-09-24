@@ -119,14 +119,17 @@ const FLASH_MODES: [number, number][] = [
   [Math.PI * 0.50, 5],                 // 3 — wide lantern
 ];
 
-export function renderFogGPU(playerVisible: Set<string>, pTileCol: number, pTileRow: number, sight: number, camX: number, camY: number, flickerExtra: number, hudHeight: number, facingAngle: number = 0, footsteps: {x:number,y:number,age:number,maxAge:number,maxRadius:number}[] = [], lightSources: {col:number,row:number,radius:number,intensity:number}[] = [], flashlight: FlashlightState = { on: false, mode: 2 }, foxFlash: FoxFlashState = { active: false, x: 0, y: 0 }) {
+export function renderFogGPU(playerVisible: Set<string>, pTileCol: number, pTileRow: number, sight: number, camX: number, camY: number, flickerExtra: number, facingAngle: number = 0, footsteps: {x:number,y:number,age:number,maxAge:number,maxRadius:number}[] = [], lightSources: {col:number,row:number,radius:number,intensity:number}[] = [], flashlight: FlashlightState = { on: false, mode: 2 }, foxFlash: FoxFlashState = { active: false, x: 0, y: 0 }) {
   if (!_fogCtx || !_fogCanvas) return;
   const ctx = _fogCtx, w = _fogCanvas.width, h = _fogCanvas.height;
-  if (!playerVisible || playerVisible.size === 0) return;
 
-  // Start with full darkness
+  // Start with full darkness (also while the first visibility result is pending,
+  // so the whole map never flashes on screen at round start)
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, w, h);
+  if (!playerVisible || playerVisible.size === 0) return;
 
   const tileS = TILE / FOG_SCALE;
   const halfW = (CANVAS_W / 2) / FOG_SCALE;
@@ -240,7 +243,6 @@ export function renderFogGPU(playerVisible: Set<string>, pTileCol: number, pTile
 
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
-  ctx.clearRect(0, 0, w, hudHeight / FOG_SCALE);
 }
 
 export function hideFogOverlay() { if (_fogPhaserImg) _fogPhaserImg.setVisible(false); }

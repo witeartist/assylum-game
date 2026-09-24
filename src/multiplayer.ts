@@ -3,7 +3,11 @@
 // ============================================================
 import Peer from "peerjs";
 import type { DataConnection } from "peerjs";
-import { generateLevelData, type LevelData } from "./level";
+import type { LevelData } from "./level";
+import { RUNNER_NAMES } from "./config";
+
+/** Round status of a runner in multiplayer. */
+export type RunnerStatus = "alive" | "caught" | "escaped" | "left";
 
 export interface PlayerInfo {
   name: string;
@@ -33,21 +37,41 @@ export const MP = {
   onDoorOpened: null as ((index: number) => void) | null,
   onBossSpawned: null as (() => void) | null,
   onPeerEscaped: null as ((peerId: string) => void) | null,
-  onNpcPositions: null as ((npcs: any[]) => void) | null,
   onCharAssigned: null as ((ch: string) => void) | null,
-  onNpcCaught: null as ((npcName: string, catcherName: string) => void) | null,
   onHostCatch: null as ((catcherName: string) => void) | null,
+  onPeerHiding: null as ((peerId: string, hiding: boolean) => void) | null,
+  onPeerLeft: null as ((peerId: string) => void) | null,
+  onRoundEnd: null as ((results: Record<string, RunnerStatus>) => void) | null,
+  onHostLost: null as (() => void) | null,
 };
 
 // ── Host-side player state tracking (for authoritative catches) ──
-const _hostPlayerStates = new Map<string, {x: number, y: number, vx: number, vy: number, hiding: boolean, alive: boolean}>();
+export interface HostPlayerState { x: number; y: number; vx: number; vy: number; hiding: boolean; flashlight: boolean; }
+const _hostPlayerStates = new Map<string, HostPlayerState>();
 export function getHostPlayerStates() { return _hostPlayerStates; }
+function hostState(peerId: string): HostPlayerState {
+  let ps = _hostPlayerStates.get(peerId);
+  if (!ps) { ps = { x: 0, y: 0, vx: 0, vy: 0, hiding: false, flashlight: false }; _hostPlayerStates.set(peerId, ps); }
+  return ps;
+}
 
 // ── Throttled position sending ───────────────────────────────
 let _lastPosSend = 0;
 let _lastFoxPosSend = 0;
 let _lastBossPosSend = 0;
 const POS_SEND_INTERVAL = 33;
+
+/**
+ * Optional self-hosted PeerJS signalling server, e.g. VITE_PEER_SERVER="localhost:9000"
+ * or "https://peer.example.com/myapp". Without it the public PeerJS cloud is used.
+ */
+function peerOptions(): Record<string, unknown> | undefined {
+  const server = import.meta.env.VITE_PEER_SERVER as string | undefined;
+  if (!server) return undefined;
+  const url = new URL(server.includes("://") ? server : "http://" + server);
+  const secure = url.protocol === "https:";
+  return { host: url.hostname, port: Number(url.port) || (secure ? 443 : 80), path: url.pathname || "/", secure };
+}
 
 function generateRoomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -60,7 +84,7 @@ export function hostRoom(character: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const code = generateRoomCode();
     const peerId = "assylum-host-" + code;
-    const peer = new Peer(peerId);
+    const peer = new Peer(peerId, peerOptions());
     peer.on("open", () => {
       MP.peer = peer;
       MP.isHost = true;
@@ -70,13 +94,17 @@ export function hostRoom(character: string): Promise<string> {
 
       peer.on("connection", (conn) => {
         conn.on("open", () => {
+          if (MP.peer !== peer) { conn.close(); return; }
           MP.connections.push(conn);
-          conn.on("data", (data: any) => handleHostMessage(conn, data));
+          conn.on("data", (data: any) => { if (MP.peer === peer) handleHostMessage(conn, data); });
           const removePeer = () => {
+            if (MP.peer !== peer || !MP.connections.includes(conn)) return;
             MP.connections = MP.connections.filter(c => c !== conn);
             delete MP.players[conn.peer];
             _hostPlayerStates.delete(conn.peer);
             broadcastPlayers();
+            broadcastToAll({ type: "peerLeft", peerId: conn.peer });
+            if (MP.onPeerLeft) MP.onPeerLeft(conn.peer);
           };
           conn.on("close", removePeer);
           conn.on("error", removePeer);
@@ -91,7 +119,7 @@ export function hostRoom(character: string): Promise<string> {
 export function joinRoom(code: string, character: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const localId = "assylum-player-" + code + "-" + Math.random().toString(36).slice(2, 7);
-    const peer = new Peer(localId);
+    const peer = new Peer(localId, peerOptions());
     peer.on("open", () => {
       MP.peer = peer;
       MP.isHost = false;
@@ -103,7 +131,8 @@ export function joinRoom(code: string, character: string): Promise<string> {
       conn.on("open", () => {
         MP.hostConn = conn;
         conn.send({ type: "join", character, peerId: localId });
-        conn.on("data", (data: any) => handleClientMessage(data));
+        conn.on("data", (data: any) => { if (MP.peer === peer) handleClientMessage(data); });
+        conn.on("close", () => { if (MP.peer === peer && MP.onHostLost) MP.onHostLost(); });
         resolve(code);
       });
       conn.on("error", reject);
@@ -132,17 +161,6 @@ export function allPlayersReady(): boolean {
   return entries.every(p => p.ready);
 }
 
-let _lastNpcPosSend = 0;
-const NPC_POS_SEND_INTERVAL = 80;
-
-export function mpSendNpcPositions(npcDataArray: { name: string; x: number; y: number }[]) {
-  if (!MP.isHost) return;
-  const now = performance.now();
-  if (now - _lastNpcPosSend < NPC_POS_SEND_INTERVAL) return;
-  _lastNpcPosSend = now;
-  broadcastToAll({ type: "npcPositions", npcs: npcDataArray });
-}
-
 // ── Host message handler ─────────────────────────────────────
 function handleHostMessage(conn: DataConnection, data: any) {
   switch (data.type) {
@@ -150,8 +168,7 @@ function handleHostMessage(conn: DataConnection, data: any) {
       const used = getUsedCharacters();
       let char = data.character;
       if (used.has(char)) {
-        const all = ["Naumi", "Kuruna", "Wite", "Sumrak", "Yoko"];
-        char = all.find(c => !used.has(c)) || char;
+        char = RUNNER_NAMES.find(c => !used.has(c)) || char;
       }
       MP.players[data.peerId] = { name: char, character: char, ready: false };
       try { conn.send({ type: "charAssigned", character: char }); } catch(e) {}
@@ -179,16 +196,21 @@ function handleHostMessage(conn: DataConnection, data: any) {
     case "pos": {
       broadcastExcept(conn, { type: "peerPos", peerId: conn.peer, x: data.x, y: data.y, vx: data.vx || 0, vy: data.vy || 0 });
       if (MP.onPeerPos) MP.onPeerPos(conn.peer, data.x, data.y, data.vx, data.vy);
-      let ps = _hostPlayerStates.get(conn.peer);
-      if (!ps) { ps = {x: 0, y: 0, vx: 0, vy: 0, hiding: false, alive: true}; _hostPlayerStates.set(conn.peer, ps); }
+      const ps = hostState(conn.peer);
       ps.x = data.x; ps.y = data.y; ps.vx = data.vx || 0; ps.vy = data.vy || 0;
+      ps.flashlight = !!data.fl;
       break;
     }
     case "hiding": {
-      const hps = _hostPlayerStates.get(conn.peer);
-      if (hps) hps.hiding = data.hiding;
+      hostState(conn.peer).hiding = !!data.hiding;
+      broadcastExcept(conn, { type: "peerHiding", peerId: conn.peer, hiding: !!data.hiding });
+      if (MP.onPeerHiding) MP.onPeerHiding(conn.peer, !!data.hiding);
       break;
     }
+    case "escaped":
+      broadcastExcept(conn, { type: "peerEscaped", peerId: conn.peer });
+      if (MP.onPeerEscaped) MP.onPeerEscaped(conn.peer);
+      break;
     case "keyCollected":
       broadcastExcept(conn, { type: "keyCollected", index: data.index, peerId: conn.peer });
       if (MP.onKeyCollected) MP.onKeyCollected(data.index, conn.peer);
@@ -244,14 +266,17 @@ function handleClientMessage(data: any) {
     case "peerEscaped":
       if (MP.onPeerEscaped) MP.onPeerEscaped(data.peerId);
       break;
-    case "npcPositions":
-      if (MP.onNpcPositions) MP.onNpcPositions(data.npcs);
-      break;
     case "charAssigned":
       if (MP.onCharAssigned) MP.onCharAssigned(data.character);
       break;
-    case "npcCaught":
-      if (MP.onNpcCaught) MP.onNpcCaught(data.npcName, data.catcherName);
+    case "peerHiding":
+      if (MP.onPeerHiding) MP.onPeerHiding(data.peerId, !!data.hiding);
+      break;
+    case "peerLeft":
+      if (MP.onPeerLeft) MP.onPeerLeft(data.peerId);
+      break;
+    case "roundEnd":
+      if (MP.onRoundEnd) MP.onRoundEnd(data.results);
       break;
   }
 }
@@ -274,14 +299,14 @@ export function broadcastPlayers() {
 }
 
 // ── Game actions ─────────────────────────────────────────────
-export function mpSendPosition(x: number, y: number, vx: number = 0, vy: number = 0) {
+export function mpSendPosition(x: number, y: number, vx: number = 0, vy: number = 0, flashlight = false) {
   const now = performance.now();
   if (now - _lastPosSend < POS_SEND_INTERVAL) return;
   _lastPosSend = now;
   if (MP.isHost) {
     broadcastToAll({ type: "hostPos", peerId: MP.localPeerId, x, y, vx, vy });
   } else if (MP.hostConn) {
-    MP.hostConn.send({ type: "pos", x, y, vx, vy });
+    MP.hostConn.send({ type: "pos", x, y, vx, vy, fl: flashlight ? 1 : 0 });
   }
 }
 
@@ -327,14 +352,12 @@ export function mpSendBossSpawned() {
 
 export function mpSendEscaped(peerId: string) {
   if (MP.isHost) broadcastToAll({ type: "peerEscaped", peerId });
-}
-
-export function mpSendNpcCaught(npcName: string, catcherName: string) {
-  if (MP.isHost) broadcastToAll({ type: "npcCaught", npcName, catcherName });
+  else if (MP.hostConn) MP.hostConn.send({ type: "escaped" });
 }
 
 export function mpSendHidingState(hiding: boolean) {
-  if (MP.hostConn) MP.hostConn.send({ type: "hiding", hiding });
+  if (MP.isHost) broadcastToAll({ type: "peerHiding", peerId: MP.localPeerId, hiding });
+  else if (MP.hostConn) MP.hostConn.send({ type: "hiding", hiding });
 }
 
 export function mpSendHostCatch(peerId: string, catcherName: string) {
@@ -342,8 +365,10 @@ export function mpSendHostCatch(peerId: string, catcherName: string) {
   const conn = MP.connections.find(c => c.peer === peerId);
   if (conn) try { conn.send({ type: "hostCatch", catcherName }); } catch(e) {}
   broadcastToAll({ type: "peerCaught", peerId, catcherName });
-  const ps = _hostPlayerStates.get(peerId);
-  if (ps) ps.alive = false;
+}
+
+export function mpSendRoundEnd(results: Record<string, RunnerStatus>) {
+  if (MP.isHost) broadcastToAll({ type: "roundEnd", results });
 }
 
 export function isMultiplayer(): boolean {
@@ -363,8 +388,14 @@ export function hostStartGame(difficulty: string, levelData: LevelData) {
   broadcastToAll(msg);
 }
 
-export function cleanupMultiplayer() {
-  if (MP.peer) { MP.peer.destroy(); MP.peer = null; }
+/**
+ * Leave the session. State resets immediately; the old peer is destroyed after `lingerMs`
+ * so messages still in flight (e.g. the host's roundEnd) get delivered.
+ */
+export function cleanupMultiplayer(lingerMs = 0) {
+  // Detach callbacks first: destroying the peer fires "close" events asynchronously.
+  const peer = MP.peer;
+  MP.peer = null;
   MP.connections = [];
   _hostPlayerStates.clear();
   MP.hostConn = null;
@@ -384,8 +415,14 @@ export function cleanupMultiplayer() {
   MP.onDoorOpened = null;
   MP.onBossSpawned = null;
   MP.onPeerEscaped = null;
-  MP.onNpcPositions = null;
   MP.onCharAssigned = null;
   MP.onHostCatch = null;
-  MP.onNpcCaught = null;
+  MP.onPeerHiding = null;
+  MP.onPeerLeft = null;
+  MP.onRoundEnd = null;
+  MP.onHostLost = null;
+  if (peer) {
+    if (lingerMs > 0) setTimeout(() => peer.destroy(), lingerMs);
+    else peer.destroy();
+  }
 }

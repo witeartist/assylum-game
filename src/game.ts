@@ -5,20 +5,21 @@ import Phaser from "phaser";
 import {
   TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, CANVAS_W, CANVAS_H,
   COLORS, ROOM_LABELS, SPRITE_DIMENSIONS,
-  currentDifficulty, setDifficulty, getDiff, RUNNER_SPD, SPRINT_MULT, SNEAK_MULT,
+  setDifficulty, getDiff, RUNNER_SPD, SPRINT_MULT, SNEAK_MULT,
+  RUNNER_NAMES, HUNTER_NAME, BOSS_NAME, BOT_HACK_TIME, MP_CATCH_RADIUS,
   bgmVolume, bgmAudio, setBgmAudio,
-  tileKey, tileCenter, worldToTile, tileDist, randInt, spriteScaleForHeight,
+  tileKey, tileCenter, worldToTile, tileDist, randInt, spriteScaleForHeight, setTileChar,
   type Tile,
 } from "./config";
 import { generateLevelData, type LevelData, type Room, type BedSpot } from "./level";
 import {
-  computeVisibility, findPath, hasLineOfSight,
+  findPath, hasLineOfSight,
   moveAlongPath, choosePatrolTile, chooseEscapeTile,
-  chooseSearchTile, chooseObjectiveTile,
+  chooseSearchTile, chooseRunnerGoal, type RunnerGoal,
 } from "./ai";
 import {
   initWorker, workerUpdateRow, workerVisibility,
-  createFogOverlay, hideFogOverlay, showFogOverlay, renderFogGPU,
+  createFogOverlay, hideFogOverlay, renderFogGPU,
   getFogCanvas, setFogImage,
   destroyWorker, updateFPS,
   type FlashlightState, type FoxFlashState,
@@ -27,9 +28,9 @@ import {
   MP, isMultiplayer, cleanupMultiplayer,
   mpSendPosition, mpSendFoxPos, mpSendBossPos,
   mpSendKeyCollected, mpSendDoorOpened, mpSendCaught,
-  mpSendBossSpawned, mpSendEscaped, mpSendNpcCaught,
-  mpSendNpcPositions, mpSendHidingState, mpSendHostCatch,
-  getHostPlayerStates,
+  mpSendBossSpawned, mpSendEscaped, mpSendHidingState, mpSendHostCatch,
+  mpSendRoundEnd, getHostPlayerStates,
+  type HostPlayerState, type RunnerStatus,
 } from "./multiplayer";
 
 function roomCenter(r: Room): Tile {
@@ -59,8 +60,9 @@ export class GameScene extends Phaser.Scene {
   _hud!: any;
   _keys!: any;
   _cursors!: any;
-  _allRunnerNames!: string[];
   _remotePlayers!: Map<string, any>;
+  /** Multiplayer: round status of every runner player, keyed by peer id. */
+  _mpStatus!: Map<string, RunnerStatus>;
   _playerVisible!: Set<string>;
   _lastVisTileKey!: string;
   _pendingVisibility!: boolean;
@@ -92,7 +94,7 @@ export class GameScene extends Phaser.Scene {
     console.log("[ASSYLUM] GameScene.create() START, player:", this._playerName);
     const diff = getDiff();
     const playerName = this._playerName;
-    const isFoxPlayer = (playerName === "Foxmind");
+    const isFoxPlayer = (playerName === HUNTER_NAME);
 
     // In multiplayer use the shared level data (host set it in lobby, clients receive it)
     const level = (isMultiplayer() && MP.levelData)
@@ -116,11 +118,12 @@ export class GameScene extends Phaser.Scene {
       bossTimer: 0,
       flickerTimer: 0,
       flickerIntensity: 0.18,
-      gameOver: false,
-      won: false,
-      catcherName: "Foxmind",
-      survivingNPCs: [] as any[],
-      escapedNPCs: 0,
+      /** How the local player's round ended; null while still playing. */
+      localDone: null as null | "caught" | "escaped",
+      /** The result scene is about to start (set once, see _scheduleFinish). */
+      finishScheduled: false,
+      finished: false,
+      catcherName: HUNTER_NAME,
       playerHiding: false,
       startTime: 0,
       spectating: false,
@@ -243,20 +246,18 @@ export class GameScene extends Phaser.Scene {
           return b;
         });
         lockedDoorObjects.push({ barriers, data: ld });
-        ld.doorTiles.forEach((d) => {
-          const chars = level.rows[d.row].split('');
-          chars[d.col] = '#';
-          level.rows[d.row] = chars.join('');
-        });
+        ld.doorTiles.forEach((d) => setTileChar(level.rows, d, "#"));
         const ttc = tileCenter(ld.terminalTile.col, ld.terminalTile.row);
         const term: any = this.physics.add.image(ttc.x, ttc.y, "terminal").setDepth(1).setScale(1.8);
         term.body.setSize(14, 14);
         term._doorIdx = idx;
         term._solved = false;
-        terminalObjects.push(term);
-        this.add.text(ttc.x, ttc.y - 14, "ТЕРМИНАЛ", {
+        term._hack = 0; // bot hacking progress, 0..1
+        term._tile = ld.terminalTile;
+        term._label = this.add.text(ttc.x, ttc.y - 14, "ТЕРМИНАЛ", {
           fontFamily: "monospace", fontSize: "7px", color: "#00c864"
         }).setOrigin(0.5).setDepth(10);
+        terminalObjects.push(term);
       });
     }
     this._lockedDoorObjects = lockedDoorObjects;
@@ -269,11 +270,6 @@ export class GameScene extends Phaser.Scene {
       inputDisplay: null as Phaser.GameObjects.Text | null,
     };
     this._minigame = minigame;
-
-    // ── Runner names ──────────────────────────────────────
-    const allRunnerNames = ["Naumi", "Kuruna", "Wite", "Sumrak", "Yoko"];
-    const npcNames = allRunnerNames.filter((n) => n !== playerName);
-    this._allRunnerNames = allRunnerNames;
 
     // ── PLAYER ────────────────────────────────────────────
     const spawnTile = isFoxPlayer ? level.foxSpawn : level.playerSpawn;
@@ -296,64 +292,19 @@ export class GameScene extends Phaser.Scene {
 
     this.physics.add.collider(player, wallGroup);
 
-    // ── NPC RUNNERS ───────────────────────────────────────
-    let npcs: any[] = [];
-    if (isMultiplayer() && !isFoxPlayer) {
-      // MP: no NPC runners
-    } else if (!isFoxPlayer) {
-      npcs = npcNames.map((name, i) => {
-        const sp = level.npcSpawns[i % level.npcSpawns.length];
-        const tc = tileCenter(sp.col, sp.row);
-        const npc = this.physics.add.sprite(tc.x, tc.y, name).setDepth(5) as any;
-        const npcScale = spriteScaleForHeight(name, 30);
-        npc.setScale(npcScale);
-        npc.body.setSize(22 / npcScale, 22 / npcScale);
-        npc.setCollideWorldBounds(true);
-        npc._name = name;
-        npc._alive = true;
-        npc._speed = RUNNER_SPD * (0.85 + Math.random() * 0.3);
-        npc.path = [];
-        npc.pathTimer = Math.random() * 0.4;
-        npc._brainState = "patrol";
-        npc._goalTile = sp;
-        this.physics.add.collider(npc, wallGroup);
-        npc._tag = this.add.text(tc.x, tc.y - 14, name, {
-          fontFamily: "monospace", fontSize: "9px", color: COLORS[name] || "#ffffff"
-        }).setOrigin(0.5).setDepth(10);
-        return npc;
-      });
-    } else if (isFoxPlayer && !isMultiplayer()) {
-      npcs = allRunnerNames.map((name, i) => {
-        const sp = level.npcSpawns[i % level.npcSpawns.length];
-        const tc = tileCenter(sp.col, sp.row);
-        const npc = this.physics.add.sprite(tc.x, tc.y, name).setDepth(5) as any;
-        const npcScale2 = spriteScaleForHeight(name, 30);
-        npc.setScale(npcScale2);
-        npc.body.setSize(22 / npcScale2, 22 / npcScale2);
-        npc.setCollideWorldBounds(true);
-        npc._name = name;
-        npc._alive = true;
-        npc._speed = RUNNER_SPD * (0.85 + Math.random() * 0.3);
-        npc.path = [];
-        npc.pathTimer = Math.random() * 0.4;
-        npc._brainState = "patrol";
-        npc._goalTile = sp;
-        this.physics.add.collider(npc, wallGroup);
-        npc._tag = this.add.text(tc.x, tc.y - 14, name, {
-          fontFamily: "monospace", fontSize: "9px", color: COLORS[name] || "#ffffff"
-        }).setOrigin(0.5).setDepth(10);
-        return npc;
-      });
-    }
+    // ── RUNNER BOTS (solo only: every runner the player doesn't control) ──
+    const botNames = isMultiplayer() ? [] : RUNNER_NAMES.filter((n) => n !== playerName);
+    const npcs: any[] = botNames.map((name, i) => this._createRunnerBot(name, level.npcSpawns[i % level.npcSpawns.length]));
     this._npcs = npcs;
-    state.survivingNPCs = npcs.slice();
 
     // ── FOXMIND (AI) ──────────────────────────────────────
+    // In multiplayer a human may play Foxmind — then there is no AI hunter at all.
+    const hasFoxPlayer = isMultiplayer() && !!MP.foxPlayerId;
     let fox: any = null;
-    if (!isFoxPlayer) {
+    if (!isFoxPlayer && !hasFoxPlayer) {
       const foxPos = tileCenter(level.foxSpawn.col, level.foxSpawn.row);
-      fox = this.physics.add.sprite(foxPos.x, foxPos.y, "Foxmind").setDepth(5);
-      const foxScale = spriteScaleForHeight("Foxmind", 36);
+      fox = this.physics.add.sprite(foxPos.x, foxPos.y, HUNTER_NAME).setDepth(5);
+      const foxScale = spriteScaleForHeight(HUNTER_NAME, 36);
       fox.setScale(foxScale);
       fox.body.setSize(14 / foxScale, 14 / foxScale);
       fox.setCollideWorldBounds(true);
@@ -395,26 +346,26 @@ export class GameScene extends Phaser.Scene {
     const keyHUD = this.add.text(12, 10, "🔑 0/" + state.keysTotal, {
       fontFamily: "monospace", fontSize: "14px", color: "#f1c40f"
     }).setScrollFactor(0).setDepth(101);
-    const survivorHUD = this.add.text(150, 10, "👤 5/5", {
+    const survivorHUD = this.add.text(100, 10, "", {
       fontFamily: "monospace", fontSize: "14px", color: "#96dc96"
     }).setScrollFactor(0).setDepth(101);
-    const bossHUD = this.add.text(320, 10, "⚠ БОСС через " + diff.bossDelay + "с", {
+    const bossHUD = this.add.text(340, 10, "⚠ БОСС через " + diff.bossDelay + "с", {
       fontFamily: "monospace", fontSize: "14px", color: "#c86432"
     }).setScrollFactor(0).setDepth(101);
     this.add.text(CANVAS_W - 10, 10, "▶ " + playerName, {
       fontFamily: "monospace", fontSize: "14px", color: COLORS[playerName] || "#ffffff"
     }).setOrigin(1, 0).setScrollFactor(0).setDepth(101);
-    const roomHUD = this.add.text(CANVAS_W / 2, 10, level.startRoomLabel || "", {
+    const roomHUD = this.add.text(CANVAS_W - 120, 11, level.startRoomLabel || "", {
       fontFamily: "monospace", fontSize: "13px", color: "#9696b4"
-    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(101);
-    const hideHUD = this.add.text(CANVAS_W / 2, CANVAS_H - 30, "", {
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(101);
+    const hideHUD = this.add.text(CANVAS_W / 2, CANVAS_H - 44, "", {
       fontFamily: "monospace", fontSize: "12px", color: "#b4b464"
     }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
     const fpsHUD = this.add.text(CANVAS_W - 10, CANVAS_H - 10, "60 FPS", {
       fontFamily: "monospace", fontSize: "10px", color: "#3c3c3c"
     }).setOrigin(1, 1).setScrollFactor(0).setDepth(101);
 
-    const spectateHUD = this.add.text(CANVAS_W / 2, CANVAS_H - 55, "", {
+    const spectateHUD = this.add.text(CANVAS_W / 2, CANVAS_H - 66, "", {
       fontFamily: "monospace", fontSize: "13px", color: "#c8c8ff"
     }).setOrigin(0.5).setScrollFactor(0).setDepth(101).setVisible(false);
     this._hud = { keyHUD, survivorHUD, bossHUD, roomHUD, hideHUD, fpsHUD, spectateHUD };
@@ -435,6 +386,12 @@ export class GameScene extends Phaser.Scene {
     this._fogImg = this.add.image(CANVAS_W / 2, CANVAS_H / 2, "_fog")
       .setScrollFactor(0).setDepth(50).setDisplaySize(CANVAS_W, CANVAS_H);
     setFogImage(this._fogImg);
+    // Black margins just outside the screen: camera shake moves the screen-fixed fog too,
+    // and without these a strip of the unfogged map shows at the edge while shaking.
+    const m = 48;
+    [[CANVAS_W / 2, -m / 2, CANVAS_W + 2 * m, m], [CANVAS_W / 2, CANVAS_H + m / 2, CANVAS_W + 2 * m, m],
+     [-m / 2, CANVAS_H / 2, m, CANVAS_H], [CANVAS_W + m / 2, CANVAS_H / 2, m, CANVAS_H]].forEach(([x, y, w, h]) =>
+      this.add.rectangle(x, y, w, h, 0x000000).setScrollFactor(0).setDepth(50));
     initWorker(level.rows.slice(), MAP_W, MAP_H);
     this._playerVisible = new Set<string>();
     this._lastVisTileKey = "";
@@ -490,36 +447,19 @@ export class GameScene extends Phaser.Scene {
       })(d);
     }
     const tryTerminal = () => {
-      if (state.gameOver || state.won || !(player as any)._alive || minigame.active || state.playerHiding || isFoxPlayer) return;
-      for (let i = 0; i < terminalObjects.length; i++) {
-        const term = terminalObjects[i];
-        if (term._solved || !term.active) continue;
-        const dx = player.x - term.x, dy = player.y - term.y;
-        if (Math.sqrt(dx*dx + dy*dy) < TILE * 2) {
-          this._startMinigame(term._doorIdx);
-          return;
-        }
-      }
+      if (!this._canAct() || minigame.active || state.playerHiding || isFoxPlayer) return;
+      const term = this._findNearestTerminal();
+      if (term) this._startMinigame(term._doorIdx);
     };
     const tryHide = () => {
-      if (state.gameOver || state.won || !(player as any)._alive || isFoxPlayer) return;
+      if (!this._canAct() || isFoxPlayer) return;
       if (state.playerHiding) {
-        state.playerHiding = false;
-        player.setVisible(true);
-        this._playerTag.setVisible(true);
-        (player.body as Phaser.Physics.Arcade.Body).enable = true;
-        if (isMultiplayer()) mpSendHidingState(false);
-        this._showMsg("Вышел из укрытия", "#c8c864");
+        this._setHiding(false);
+        this._showMsg("Укрытие покинуто", "#c8c864");
       } else {
-        const loc = this._findNearestLocker();
-        if (loc) {
-          state.playerHiding = true;
-          player.setVisible(false);
-          this._playerTag.setVisible(false);
-          (player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
-          (player.body as Phaser.Physics.Arcade.Body).enable = false;
-          player.x = loc.x; player.y = loc.y;
-          if (isMultiplayer()) mpSendHidingState(true);
+        const spot = this._findNearestLocker();
+        if (spot) {
+          this._setHiding(true, spot);
           this._showMsg("В УКРЫТИИ (E — выйти)", "#64c864");
         }
       }
@@ -529,12 +469,12 @@ export class GameScene extends Phaser.Scene {
       if (ev.code === "KeyF") tryTerminal();
       if (ev.code === "KeyE") tryHide();
       // Flashlight toggle (R) — runners only
-      if (ev.code === "KeyR" && !isFoxPlayer && !state.gameOver && !state.won) {
+      if (ev.code === "KeyR" && !isFoxPlayer && this._canAct()) {
         this._flashlight.on = !this._flashlight.on;
         this._showMsg(this._flashlight.on ? "🔦 Фонарик ВКЛ (режим " + this._flashlight.mode + ")" : "🔦 Фонарик ВЫКЛ", this._flashlight.on ? "#ffe090" : "#808080");
       }
       // Fox player flash (R key) — 30s cooldown, 1s burst
-      if (ev.code === "KeyR" && isFoxPlayer && !state.gameOver && !state.won) {
+      if (ev.code === "KeyR" && isFoxPlayer && this._canAct()) {
         if (this._foxFlashTimer <= 0) {
           this._foxFlash = { active: true, x: player.x, y: player.y };
           this._foxFlashTimer = 30;
@@ -555,111 +495,44 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.keyboard!.on("keydown-ESC", () => {
       if (minigame.active) this._endMinigame(false);
-      else if (state.spectating) {
-        state.spectating = false;
-        state.gameOver = true;
-        this._triggerGameOver();
-      } else if (!state.gameOver && !state.won) {
-        destroyWorker();
-        this._cleanupMPCallbacks();
-        if (isMultiplayer()) cleanupMultiplayer();
-        this.scene.start("Menu");
-      }
+      else if (state.finishScheduled) return;
+      else if (state.localDone && !isMultiplayer()) this._scheduleFinish(0);
+      else this._leaveToMenu();
     });
     this.input.keyboard!.on("keydown-TAB", (ev: KeyboardEvent) => {
       ev.preventDefault();
       if (!state.spectating) return;
-      this._cycleSpectateTarget(1);
+      state.spectateIdx++;
+      this._refreshSpectate();
     });
 
     // ── Collisions ────────────────────────────────────────
-    keyObjects.forEach((k, idx) => {
-      this.physics.add.overlap(player, k, () => {
-        if (!(player as any)._alive || !k.active) return;
-        state.keysCollected++;
-        k.destroy();
-        if (isMultiplayer()) mpSendKeyCollected(idx);
-        if (state.keysCollected >= state.keysTotal) {
-          exitObj.setTexture("exit");
-          exitObj._locked = false;
-          this._showMsg("ВЫХОД ОТКРЫТ! БЕГИ!", "#32ff32");
-        } else {
-          this._showMsg("Ключ " + state.keysCollected + "/" + state.keysTotal, "#f1c40f");
-        }
-        this.cameras.main.shake(200, 0.005);
+    // Keys and the exit are for runners only — the hunter can't use them.
+    if (!isFoxPlayer) {
+      keyObjects.forEach((k, idx) => {
+        this.physics.add.overlap(player, k, () => {
+          if ((player as any)._alive) this._collectKey(idx);
+        });
+      });
+      this.physics.add.overlap(player, exitObj, () => {
+        if ((player as any)._alive && !exitObj._locked && !state.playerHiding) this._escapeLocal();
+      });
+    }
+    npcs.forEach((npc) => {
+      keyObjects.forEach((k, idx) => {
+        this.physics.add.overlap(npc, k, () => {
+          if (npc._alive && this._collectKey(idx, npc._name)) { npc.path = []; npc.pathTimer = 0; }
+        });
+      });
+      this.physics.add.overlap(npc, exitObj, () => {
+        if (npc._alive && !exitObj._locked) this._npcEscaped(npc);
       });
     });
 
+    // Catches by contact — solo only. In multiplayer the host decides (_checkHostCatches).
     if (!isMultiplayer()) {
-      npcs.forEach((npc) => {
-        keyObjects.forEach((k, idx) => {
-          this.physics.add.overlap(npc, k, () => {
-            if (!npc._alive || !k.active) return;
-            state.keysCollected++;
-            k.destroy();
-            npc.path = []; npc.pathTimer = 0;
-            if (state.keysCollected >= state.keysTotal) {
-              exitObj.setTexture("exit");
-              exitObj._locked = false;
-              this._showMsg("ВЫХОД ОТКРЫТ! БЕГИ!", "#32ff32");
-            }
-          });
-        });
-      });
-    }
-
-    this.physics.add.overlap(player, exitObj, () => {
-      if (!(player as any)._alive || exitObj._locked || state.playerHiding) return;
-      if (!state.won) {
-        state.won = true;
-        if (isMultiplayer()) mpSendEscaped(MP.localPeerId!);
-        this._triggerWin();
-      }
-    });
-
-    if (!isMultiplayer()) {
-      npcs.forEach((npc) => {
-        this.physics.add.overlap(npc, exitObj, () => {
-          if (!npc._alive || exitObj._locked) return;
-          npc._alive = false;
-          npc.setVisible(false);
-          if (npc._tag) npc._tag.setVisible(false);
-          state.escapedNPCs++;
-          state.survivingNPCs = state.survivingNPCs.filter((n: any) => n !== npc);
-          this._showMsg(npc._name + " сбежал!", "#64ff64");
-          // If spectating, check if we still have targets
-          if (state.spectating) {
-            const alive = this._npcs.filter((n: any) => n._alive);
-            if (alive.length === 0) {
-              state.spectating = false;
-              state.gameOver = true;
-              this._triggerGameOver();
-            } else {
-              this._updateSpectateCamera();
-            }
-          }
-        });
-      });
-    }
-
-    if (fox) {
-      const catchTargets = [player, ...npcs];
-      catchTargets.forEach((target) => {
-        this.physics.add.overlap(fox, target, () => {
-          if (!(target as any)._alive) return;
-          if (target === player && state.playerHiding) return;
-          this._catchRunner(target, "Foxmind");
-        });
-      });
-    }
-
-    if (isFoxPlayer) {
-      npcs.forEach((npc) => {
-        this.physics.add.overlap(player, npc, () => {
-          if (!npc._alive) return;
-          this._catchRunner(npc, "Foxmind");
-        });
-      });
+      if (fox) [player, ...npcs].forEach((target) => this.physics.add.overlap(fox, target, () => this._tryCatch(target, HUNTER_NAME)));
+      if (isFoxPlayer) npcs.forEach((npc) => this.physics.add.overlap(player, npc, () => this._tryCatch(npc, HUNTER_NAME)));
     }
 
     // ── Multiplayer ───────────────────────────────────────
@@ -684,8 +557,7 @@ export class GameScene extends Phaser.Scene {
 
   _updateInner(time: number, delta: number) {
     const state = this._state;
-    if (state.won) return;
-    if (state.gameOver && !state.spectating) return;
+    if (state.finished) return;
     const dt = delta / 1000;
     const player = this._player;
     if (!player) return; // create() didn't finish
@@ -695,28 +567,8 @@ export class GameScene extends Phaser.Scene {
     const npcs = this._npcs;
     const isFoxPlayer = this._isFoxPlayer;
 
-    // ── Hide HUD indicator ─────────────────────────────
-    const nearLocker = this._findNearestLocker();
-    let nearTerminal = false;
-    for (let i = 0; i < this._terminalObjects.length; i++) {
-      const term = this._terminalObjects[i];
-      if (!term._solved && term.active) {
-        const dx = player.x - term.x, dy = player.y - term.y;
-        if (Math.sqrt(dx*dx + dy*dy) < TILE * 2) { nearTerminal = true; break; }
-      }
-    }
-    if (state.playerHiding) {
-      this._hud.hideHUD.setText("🚪 УКРЫТИЕ [E — выйти]");
-    } else if (nearTerminal && !this._minigame.active) {
-      this._hud.hideHUD.setText("💻 Нажми F — терминал");
-    } else if (nearLocker) {
-      this._hud.hideHUD.setText(nearLocker._isBed ? "🛏 Нажми E — спрятаться под кровать" : "🚪 Нажми E чтобы спрятаться");
-    } else {
-      this._hud.hideHUD.setText("");
-    }
-
     // ── Player movement ───────────────────────────────
-    if ((player as any)._alive && !state.playerHiding && !this._minigame.active) {
+    if (this._canAct() && !state.playerHiding && !this._minigame.active) {
       let mx = 0, my = 0;
       if (this._keys.A.isDown || this._cursors.left.isDown || this._physKeys.a) mx -= 1;
       if (this._keys.D.isDown || this._cursors.right.isDown || this._physKeys.d) mx += 1;
@@ -754,13 +606,10 @@ export class GameScene extends Phaser.Scene {
     // ── MP position sync ──────────────────────────────
     if (isMultiplayer()) {
       const pb = player.body as Phaser.Physics.Arcade.Body;
-      mpSendPosition(player.x, player.y, pb.velocity.x, pb.velocity.y);
+      mpSendPosition(player.x, player.y, pb.velocity.x, pb.velocity.y, this._flashlight.on);
       if (MP.isHost) {
         if (fox && fox.body) mpSendFoxPos(fox.x, fox.y, fox.body.velocity.x, fox.body.velocity.y);
         if (this._bossObj && this._bossObj.active && this._bossObj.body) mpSendBossPos(this._bossObj.x, this._bossObj.y, this._bossObj.body.velocity.x, this._bossObj.body.velocity.y);
-        // Send NPC positions to clients
-        const npcData = npcs.filter((n: any) => n._alive).map((n: any) => ({name: n._name, x: n.x, y: n.y}));
-        mpSendNpcPositions(npcData);
       }
     }
 
@@ -776,19 +625,13 @@ export class GameScene extends Phaser.Scene {
         const npcTile = worldToTile(npc);
         const threats: Tile[] = [];
         let dangerVisible = false;
-
-        if (fox) {
-          threats.push(worldToTile(fox));
-          dangerVisible = hasLineOfSight(level.rows, npc, fox) && Phaser.Math.Distance.Between(npc.x, npc.y, fox.x, fox.y) < TILE * 12;
-        }
-        if (isFoxPlayer) {
-          threats.push(worldToTile(player));
-          dangerVisible = dangerVisible || (hasLineOfSight(level.rows, npc, player) && Phaser.Math.Distance.Between(npc.x, npc.y, player.x, player.y) < TILE * 12);
-        }
-        if (this._bossObj && this._bossObj.active) {
-          threats.push(worldToTile(this._bossObj));
-          dangerVisible = dangerVisible || (hasLineOfSight(level.rows, npc, this._bossObj) && Phaser.Math.Distance.Between(npc.x, npc.y, this._bossObj.x, this._bossObj.y) < TILE * 12);
-        }
+        const noticeThreat = (t: { x: number; y: number }) => {
+          threats.push(worldToTile(t));
+          if (Phaser.Math.Distance.Between(npc.x, npc.y, t.x, t.y) < TILE * 12 && hasLineOfSight(level.rows, npc, t)) dangerVisible = true;
+        };
+        if (fox) noticeThreat(fox);
+        if (isFoxPlayer) noticeThreat(player);
+        if (this._bossObj && this._bossObj.active) noticeThreat(this._bossObj);
 
         // Separation (add push to velocity set by moveAlongPath)
         npcs.forEach((other, oi) => {
@@ -802,6 +645,12 @@ export class GameScene extends Phaser.Scene {
           }
         });
 
+        // Hacking a terminal: stay put until the door opens, unless a threat shows up.
+        if (npc._brainState === "hack" && !dangerVisible && this._tryBotHack(npc, dt)) {
+          if (npc._tag) { npc._tag.x = npc.x; npc._tag.y = npc.y - 14; }
+          return;
+        }
+
         npc.pathTimer -= dt;
         if (npc.pathTimer <= 0 || npc.path.length === 0) {
           let dest: Tile;
@@ -810,11 +659,12 @@ export class GameScene extends Phaser.Scene {
             dest = chooseEscapeTile(level, npcTile, threats);
             npc.pathTimer = 0.5;
           } else {
-            const obj = chooseObjectiveTile(level, npcTile, this._keyObjects, this._exitObj._locked);
-            if (obj) {
-              npc._brainState = this._exitObj._locked ? "seek-key" : "escape";
-              dest = obj;
-              npc.pathTimer = this._exitObj._locked ? 1.2 + Math.random() * 0.5 : 0.8;
+            const goal = this._chooseBotGoal(npcTile);
+            npc._goal = goal;
+            if (goal) {
+              npc._brainState = goal.kind === "exit" ? "escape" : goal.kind === "key" ? "seek-key" : "hack";
+              dest = goal.tile;
+              npc.pathTimer = goal.kind === "exit" ? 0.8 : 1.2 + Math.random() * 0.5;
             } else {
               npc._brainState = "patrol";
               dest = choosePatrolTile(level, npcTile);
@@ -822,7 +672,7 @@ export class GameScene extends Phaser.Scene {
             }
           }
           npc.path = findPath(level.rows, npcTile, dest);
-          if (npc.path.length === 0) {
+          if (npc.path.length === 0 && npc._brainState !== "hack") {
             // Already at dest or unreachable — force a far patrol target
             const alt = choosePatrolTile(level, npcTile);
             npc.path = findPath(level.rows, npcTile, alt);
@@ -871,13 +721,12 @@ export class GameScene extends Phaser.Scene {
           visibleTargets.push({ actor: npc, dist: d, pri: 1 });
       });
       if (isMultiplayer()) {
-        getHostPlayerStates().forEach((ps, pid) => {
-          if (!ps.alive || ps.hiding || pid === MP.foxPlayerId) return;
-          // Remote players in dark areas are also hidden (assume no flashlight info for now)
-          if (!this._isInLitArea(ps.x, ps.y) && !this._foxFlash.active) return;
+        this._remoteRunnerStates().forEach(({ ps }) => {
+          // Same rule as for the local player: dark + flashlight off = unseen
+          if (!ps.flashlight && !this._isInLitArea(ps.x, ps.y) && !this._foxFlash.active) return;
           const d = Phaser.Math.Distance.Between(fox.x, fox.y, ps.x, ps.y);
-          if (d < TILE * diff.foxSight && hasLineOfSight(level.rows, fox, {x: ps.x, y: ps.y}))
-            visibleTargets.push({ actor: {x: ps.x, y: ps.y}, dist: d, pri: 0 });
+          if (d < TILE * diff.foxSight && hasLineOfSight(level.rows, fox, ps))
+            visibleTargets.push({ actor: { x: ps.x, y: ps.y }, dist: d, pri: 0 });
         });
       }
 
@@ -925,26 +774,20 @@ export class GameScene extends Phaser.Scene {
       fox._searchHideTimer -= dt;
       if (fox._searchHideTimer <= 0) {
         fox._searchHideTimer = 30;
-        const foxTile = worldToTile(fox);
         const searchRange = TILE * 3;
         const allSpots = [...this._lockerObjects, ...this._bedObjects];
-        for (let si = 0; si < allSpots.length; si++) {
-          const spot = allSpots[si];
-          if (!spot.active) continue;
-          const sd = Phaser.Math.Distance.Between(fox.x, fox.y, spot.x, spot.y);
-          if (sd > searchRange) continue;
-          // Check if player is hiding in this spot
-          if (state.playerHiding && (player as any)._alive && !isFoxPlayer) {
-            const pd = Phaser.Math.Distance.Between(player.x, player.y, spot.x, spot.y);
-            if (pd < TILE) {
-              state.playerHiding = false;
-              player.setVisible(true);
-              this._playerTag.setVisible(true);
-              (player.body as Phaser.Physics.Arcade.Body).enable = true;
-              this._showMsg("ОБНАРУЖЕН!", "#ff3232");
-              this._catchRunner(player, "Foxmind");
-              break;
-            }
+        for (const spot of allSpots) {
+          if (!spot.active || Phaser.Math.Distance.Between(fox.x, fox.y, spot.x, spot.y) > searchRange) continue;
+          if (state.playerHiding && (player as any)._alive && Phaser.Math.Distance.Between(player.x, player.y, spot.x, spot.y) < TILE) {
+            this._setHiding(false);
+            this._showMsg("ВАС НАШЛИ!", "#ff3232");
+            this._catchRunner(player, HUNTER_NAME);
+          }
+          if (isMultiplayer()) {
+            getHostPlayerStates().forEach((ps, pid) => {
+              if (ps.hiding && this._mpStatus.get(pid) === "alive" && Phaser.Math.Distance.Between(ps.x, ps.y, spot.x, spot.y) < TILE)
+                this._hostCatchRemote(pid, HUNTER_NAME);
+            });
           }
         }
       }
@@ -993,11 +836,10 @@ export class GameScene extends Phaser.Scene {
         }
       });
       if (isMultiplayer()) {
-        getHostPlayerStates().forEach((ps, pid) => {
-          if (!ps.alive || ps.hiding || pid === MP.foxPlayerId) return;
+        this._remoteRunnerStates().forEach(({ ps }) => {
           const bd = Phaser.Math.Distance.Between(bossObj.x, bossObj.y, ps.x, ps.y);
-          if (bd < TILE * (diff.foxSight + 4) && hasLineOfSight(level.rows, bossObj, {x: ps.x, y: ps.y})) {
-            if (bd < targetDist) { targetDist = bd; target = {x: ps.x, y: ps.y}; }
+          if (bd < TILE * (diff.foxSight + 4) && bd < targetDist && hasLineOfSight(level.rows, bossObj, ps)) {
+            targetDist = bd; target = { x: ps.x, y: ps.y };
           }
         });
       }
@@ -1021,18 +863,16 @@ export class GameScene extends Phaser.Scene {
     // ── Host-authoritative catch check ────────────
     if (isMultiplayer() && MP.isHost) this._checkHostCatches();
 
-    // ── Boss timer ────────────────────────────────────
-    if (!isMultiplayer() || MP.isHost) {
-      if (!state.bossSpawned) {
-        state.bossTimer += dt;
-        const rem = Math.max(0, Math.ceil(diff.bossDelay - state.bossTimer));
-        this._hud.bossHUD.setText("⚠ БОСС через " + rem + "с");
-        this._hud.bossHUD.setColor(rem < 15 ? "#ff3232" : "#c86432");
-        if (state.bossTimer >= diff.bossDelay) this._spawnBoss();
-      } else {
-        this._hud.bossHUD.setText("⚠ ЖЕЛОЧЬ ЗДЕСЬ");
-        this._hud.bossHUD.setColor("#ff0000");
-      }
+    // ── Boss timer (every peer counts down; only host/solo spawns) ──
+    if (!state.bossSpawned) {
+      state.bossTimer += dt;
+      const rem = Math.max(0, Math.ceil(diff.bossDelay - state.bossTimer));
+      this._hud.bossHUD.setText("⚠ БОСС через " + rem + "с");
+      this._hud.bossHUD.setColor(rem < 15 ? "#ff3232" : "#c86432");
+      if (state.bossTimer >= diff.bossDelay && (!isMultiplayer() || MP.isHost)) this._spawnBoss();
+    } else {
+      this._hud.bossHUD.setText("⚠ " + BOSS_NAME.toUpperCase() + " ЗДЕСЬ");
+      this._hud.bossHUD.setColor("#ff0000");
     }
 
     // ── Remote players (velocity extrapolation) ──────
@@ -1070,7 +910,7 @@ export class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     // Fox player gets full sight, no flashlight needed
     const fogFlashlight: FlashlightState = isFoxPlayer ? { on: true, mode: 3 } : this._flashlight;
-    renderFogGPU(this._playerVisible, pTile.col, pTile.row, isFoxPlayer ? diff.foxSight : diff.sight, cam.scrollX + CANVAS_W / 2, cam.scrollY + CANVAS_H / 2, flickerExtra, 36, this._facingAngle, this._footsteps, level.lightSources || [], fogFlashlight, this._foxFlash);
+    renderFogGPU(this._playerVisible, pTile.col, pTile.row, isFoxPlayer ? diff.foxSight : diff.sight, cam.scrollX + CANVAS_W / 2, cam.scrollY + CANVAS_H / 2, flickerExtra, this._facingAngle, this._footsteps, level.lightSources || [], fogFlashlight, this._foxFlash);
     if (this._fogTex && this._fogTex.refresh) this._fogTex.refresh();
 
     // ── Hide entities behind fog ──────────────────────
@@ -1100,24 +940,12 @@ export class GameScene extends Phaser.Scene {
 
     // ── HUD update ────────────────────────────────────
     this._hud.keyHUD.setText("🔑 " + state.keysCollected + "/" + state.keysTotal);
-    const aliveCount = ((player as any)._alive ? 1 : 0) + npcs.filter((n: any) => n._alive).length;
-    this._hud.survivorHUD.setText("👤 " + aliveCount + "/" + this._allRunnerNames.length + "  Спасены: " + state.escapedNPCs);
-    this._hud.survivorHUD.setColor(aliveCount <= 2 ? "#ff6464" : "#96dc96");
-    if (state.spectating) {
-      this._hud.hideHUD.setText("");
-      const st = this._getSpectateTarget();
-      if (st) {
-        this._hud.spectateHUD.setText("👁 НАБЛЮДЕНИЕ: " + (st._name || "???") + "  [Tab — переключить | ESC — выход]");
-      }
-    } else if (isFoxPlayer) {
-      if (this._foxFlashTimer <= 0) {
-        this._hud.hideHUD.setText("⚡ [R] Вспышка — готово!");
-        this._hud.hideHUD.setColor("#ffff64");
-      } else {
-        this._hud.hideHUD.setText("⚡ Вспышка: " + Math.ceil(this._foxFlashTimer) + "с");
-        this._hud.hideHUD.setColor("#808080");
-      }
-    }
+    const counts = this._runnerCounts();
+    this._hud.survivorHUD.setText(isFoxPlayer
+      ? "🎯 Поймано " + counts.caught + "/" + counts.total + " · ушли " + counts.escaped
+      : "👤 " + counts.alive + "/" + counts.total + "  Спасены: " + counts.escaped);
+    this._hud.survivorHUD.setColor(!isFoxPlayer && counts.alive <= Math.floor(counts.total / 2) ? "#ff6464" : "#96dc96");
+    this._updatePromptHUD();
   }
 
   // ── HELPER METHODS ──────────────────────────────────────
@@ -1200,6 +1028,134 @@ export class GameScene extends Phaser.Scene {
     return best;
   }
 
+  _findNearestTerminal(): any {
+    const p = this._player;
+    return this._terminalObjects.find((t) =>
+      !t._solved && t.active && Phaser.Math.Distance.Between(p.x, p.y, t.x, t.y) < TILE * 2) || null;
+  }
+
+  /** The local player can still act: alive, still in the round. */
+  _canAct(): boolean {
+    const state = this._state;
+    return !state.finishScheduled && !state.localDone && (this._player as any)._alive;
+  }
+
+  _setHiding(on: boolean, spot?: any) {
+    const player: any = this._player;
+    const body = player.body as Phaser.Physics.Arcade.Body;
+    this._state.playerHiding = on;
+    player.setVisible(!on);
+    this._playerTag.setVisible(!on);
+    body.setVelocity(0, 0);
+    body.enable = !on;
+    if (on && spot) { player.x = spot.x; player.y = spot.y; }
+    if (isMultiplayer()) mpSendHidingState(on);
+  }
+
+  /** Context hint above the controls line (hide / terminal / hunter's flash). */
+  _updatePromptHUD() {
+    const hud = this._hud.hideHUD;
+    if (this._isFoxPlayer) {
+      const ready = this._foxFlashTimer <= 0;
+      hud.setText(ready ? "⚡ [R] Вспышка — готово!" : "⚡ Вспышка: " + Math.ceil(this._foxFlashTimer) + "с");
+      hud.setColor(ready ? "#ffff64" : "#808080");
+      return;
+    }
+    let text = "";
+    if (!this._canAct()) text = "";
+    else if (this._state.playerHiding) text = "🚪 УКРЫТИЕ [E — выйти]";
+    else if (!this._minigame.active && this._findNearestTerminal()) text = "💻 Нажми F — терминал";
+    else {
+      const spot = this._findNearestLocker();
+      if (spot) text = spot._isBed ? "🛏 Нажми E — спрятаться под кровать" : "🚪 Нажми E чтобы спрятаться";
+    }
+    hud.setText(text).setColor("#b4b464");
+  }
+
+  _createRunnerBot(name: string, spawn: Tile): any {
+    const tc = tileCenter(spawn.col, spawn.row);
+    const npc = this.physics.add.sprite(tc.x, tc.y, name).setDepth(5) as any;
+    const scale = spriteScaleForHeight(name, 30);
+    npc.setScale(scale);
+    npc.body.setSize(22 / scale, 22 / scale);
+    npc.setCollideWorldBounds(true);
+    npc._name = name;
+    npc._alive = true;
+    npc._escaped = false;
+    npc._speed = RUNNER_SPD * (0.85 + Math.random() * 0.3);
+    npc.path = [];
+    npc.pathTimer = Math.random() * 0.4;
+    npc._brainState = "patrol";
+    npc._goal = null;
+    this.physics.add.collider(npc, this._wallGroup);
+    npc._tag = this.add.text(tc.x, tc.y - 14, name, {
+      fontFamily: "monospace", fontSize: "9px", color: COLORS[name] || "#ffffff"
+    }).setOrigin(0.5).setDepth(10);
+    return npc;
+  }
+
+  _chooseBotGoal(from: Tile): RunnerGoal | null {
+    const exit = this._exitObj._locked ? null : this._level.exitTile;
+    const keys = this._keyObjects.flatMap((k, index) =>
+      k.active ? [{ tile: worldToTile({ x: k.x, y: k._baseY }), index }] : []);
+    // Only terminals whose door still guards an uncollected key are worth hacking.
+    const terminals = this._terminalObjects.flatMap((t, index) => {
+      const key = this._keyObjects[this._lockedDoorObjects[index].data.keyIndex];
+      return !t._solved && key && key.active ? [{ tile: t._tile, index }] : [];
+    });
+    return chooseRunnerGoal(this._level.rows, from, exit, keys, terminals);
+  }
+
+  /** A runner bot standing at its target terminal hacks it. Returns true while busy hacking. */
+  _tryBotHack(npc: any, dt: number): boolean {
+    const term = npc._goal && this._terminalObjects[npc._goal.index];
+    if (!term || term._solved) return false;
+    if (Phaser.Math.Distance.Between(npc.x, npc.y, term.x, term.y) > TILE * 1.2) return false;
+    npc.path = [];
+    npc.body.setVelocity(0, 0);
+    term._hack = Math.min(1, term._hack + dt / BOT_HACK_TIME);
+    term._label.setText("ВЗЛОМ " + Math.floor(term._hack * 100) + "%");
+    if (term._hack >= 1) this._openLockedDoor(term._doorIdx, false, npc._name);
+    return true;
+  }
+
+  /** Single place that opens a locked door: player terminal, bot hack or network event. */
+  _openLockedDoor(idx: number, fromNetwork = false, by?: string): boolean {
+    const door = this._lockedDoorObjects[idx];
+    const term = this._terminalObjects[idx];
+    if (!door || !term || term._solved) return false;
+    term._solved = true;
+    term._label.setText("ОТКРЫТО").setColor("#3c6450");
+    door.barriers.forEach((b: any) => { if (b.active) b.destroy(); });
+    door.data.doorTiles.forEach((d: Tile) => {
+      setTileChar(this._level.rows, d, ".");
+      workerUpdateRow(d.row, this._level.rows[d.row]);
+    });
+    this._showMsg("ДВЕРЬ ОТКРЫТА!" + (by ? " — " + by : ""), "#00ff78");
+    this.cameras.main.shake(200, 0.008);
+    if (isMultiplayer() && !fromNetwork) mpSendDoorOpened(idx);
+    return true;
+  }
+
+  /** Single place that picks up a key: local player (no `by`), bot or network event. */
+  _collectKey(idx: number, by?: string, fromNetwork = false): boolean {
+    const k = this._keyObjects[idx];
+    if (!k || !k.active) return false;
+    const state = this._state;
+    k.destroy();
+    state.keysCollected++;
+    if (isMultiplayer() && !fromNetwork) mpSendKeyCollected(idx);
+    if (state.keysCollected >= state.keysTotal) {
+      this._exitObj.setTexture("exit");
+      this._exitObj._locked = false;
+      this._showMsg("ВЫХОД ОТКРЫТ! БЕГИ!", "#32ff32");
+    } else {
+      this._showMsg("Ключ " + state.keysCollected + "/" + state.keysTotal + (by ? " — " + by : ""), "#f1c40f");
+    }
+    if (!by && !fromNetwork) this.cameras.main.shake(200, 0.005);
+    return true;
+  }
+
   _startMinigame(termIdx: number) {
     const mg = this._minigame;
     mg.active = true;
@@ -1265,48 +1221,49 @@ export class GameScene extends Phaser.Scene {
 
   _endMinigame(success: boolean) {
     const mg = this._minigame;
-    if (success) {
-      const doorData = this._lockedDoorObjects[mg.termIdx];
-      if (doorData) {
-        doorData.barriers.forEach((b: any) => { if (b.active) b.destroy(); });
-        doorData.data.doorTiles.forEach((d: any) => {
-          const chars = this._level.rows[d.row].split('');
-          chars[d.col] = '.';
-          this._level.rows[d.row] = chars.join('');
-          workerUpdateRow(d.row, this._level.rows[d.row]);
-        });
-      }
-      if (this._terminalObjects[mg.termIdx]) this._terminalObjects[mg.termIdx]._solved = true;
-      this._showMsg("ДВЕРЬ ОТКРЫТА!", "#00ff78");
-      this.cameras.main.shake(200, 0.008);
-      if (isMultiplayer()) mpSendDoorOpened(mg.termIdx);
-    }
+    if (success) this._openLockedDoor(mg.termIdx);
     mg.elements.forEach((e: any) => { if (e.active) e.destroy(); });
     mg.elements = [];
     mg.active = false;
     mg.termIdx = -1;
   }
 
-  _checkHostCatches() {
-    const fox = this._fox;
-    const bossObj = this._bossObj;
-    const catchRadius = TILE * 1.2;
+  /** Remote runners the host's AI may target: alive in the round and not hiding. */
+  _remoteRunnerStates(): { pid: string; ps: HostPlayerState }[] {
+    const out: { pid: string; ps: HostPlayerState }[] = [];
     getHostPlayerStates().forEach((ps, pid) => {
-      if (!ps.alive || ps.hiding) return;
-      if (fox) {
-        const d = Phaser.Math.Distance.Between(fox.x, fox.y, ps.x, ps.y);
-        if (d < catchRadius) {
-          mpSendHostCatch(pid, "Foxmind");
-          return;
-        }
-      }
-      if (bossObj && bossObj.active && pid !== MP.foxPlayerId) {
-        const d = Phaser.Math.Distance.Between(bossObj.x, bossObj.y, ps.x, ps.y);
-        if (d < catchRadius) {
-          mpSendHostCatch(pid, "Желочь");
-        }
-      }
+      if (pid !== MP.foxPlayerId && !ps.hiding && this._mpStatus.get(pid) === "alive") out.push({ pid, ps });
     });
+    return out;
+  }
+
+  _hostCatchRemote(pid: string, catcherName: string) {
+    if (this._mpStatus.get(pid) !== "alive") return;
+    mpSendHostCatch(pid, catcherName);
+    this._onPeerCaught(pid, catcherName);
+  }
+
+  /** Host-authoritative catches: every hunter (AI fox, boss, human Foxmind) vs every runner. */
+  _checkHostCatches() {
+    const player: any = this._player;
+    const catchers: { x: number; y: number; name: string }[] = [];
+    if (this._fox) catchers.push({ x: this._fox.x, y: this._fox.y, name: HUNTER_NAME });
+    if (this._bossObj && this._bossObj.active) catchers.push({ x: this._bossObj.x, y: this._bossObj.y, name: BOSS_NAME });
+    if (this._isFoxPlayer) catchers.push({ x: player.x, y: player.y, name: HUNTER_NAME });
+    const foxState = MP.foxPlayerId && MP.foxPlayerId !== MP.localPeerId ? getHostPlayerStates().get(MP.foxPlayerId) : null;
+    if (foxState) catchers.push({ x: foxState.x, y: foxState.y, name: HUNTER_NAME });
+    if (catchers.length === 0) return;
+
+    const caughtBy = (x: number, y: number) =>
+      catchers.find((c) => Phaser.Math.Distance.Between(c.x, c.y, x, y) < MP_CATCH_RADIUS)?.name;
+    this._remoteRunnerStates().forEach(({ pid, ps }) => {
+      const by = caughtBy(ps.x, ps.y);
+      if (by) this._hostCatchRemote(pid, by);
+    });
+    if (!this._isFoxPlayer && player._alive && !this._state.playerHiding) {
+      const by = caughtBy(player.x, player.y);
+      if (by) this._catchRunner(player, by);
+    }
   }
 
   _spawnBoss() {
@@ -1344,141 +1301,186 @@ export class GameScene extends Phaser.Scene {
     bossObj.path = [];
     bossObj.pathTimer = 0;
     this.physics.add.collider(bossObj, this._wallGroup);
-    bossObj._tag = this.add.text(bossPos.x, bossPos.y - 16, "ЖЕЛОЧЬ", {
+    bossObj._tag = this.add.text(bossPos.x, bossPos.y - 16, BOSS_NAME.toUpperCase(), {
       fontFamily: "monospace", fontSize: "9px", color: "#32dc32"
     }).setOrigin(0.5).setDepth(10);
     this._bossObj = bossObj;
 
-    const catchTargets = [this._player, ...this._npcs];
-    catchTargets.forEach((target) => {
-      this.physics.add.overlap(bossObj, target, () => {
-        if (!(target as any)._alive) return;
-        if (target === this._player && this._isFoxPlayer) return;
-        if (target === this._player && state.playerHiding) return;
-        this._catchRunner(target, "Желочь");
-      });
-    });
+    if (!isMultiplayer()) {
+      [this._player, ...this._npcs].forEach((target) =>
+        this.physics.add.overlap(bossObj, target, () => this._tryCatch(target, BOSS_NAME)));
+    }
+  }
+
+  _tryCatch(target: any, catcherName: string) {
+    if (!target._alive) return;
+    if (target === this._player && (this._isFoxPlayer || this._state.playerHiding)) return;
+    this._catchRunner(target, catcherName);
+  }
+
+  _spawnCorpse(x: number, y: number, strong = false) {
+    this.add.image(x, y, "blood").setScale(2.5).setDepth(0);
+    this.add.image(x, y, "corpse").setScale(2).setDepth(1);
+    this.cameras.main.shake(strong ? 400 : 200, strong ? 0.02 : 0.01);
   }
 
   _catchRunner(runner: any, catcherName: string) {
     const state = this._state;
-    if (!runner._alive) return;
+    if (!runner._alive || state.finishScheduled) return;
     runner._alive = false;
-    const isPlayer = (runner === this._player);
-
-    this.add.image(runner.x, runner.y, "blood").setScale(2.5).setDepth(0);
-    this.add.image(runner.x, runner.y, "corpse").setScale(2).setDepth(1);
-    this.cameras.main.shake(isPlayer ? 400 : 200, isPlayer ? 0.02 : 0.01);
+    runner.setVisible(false);
+    if (runner._tag) runner._tag.setVisible(false);
+    (runner.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    const isPlayer = runner === this._player;
+    this._spawnCorpse(runner.x, runner.y, isPlayer);
 
     if (isPlayer) {
-      runner.setVisible(false);
-      if (this._playerTag) this._playerTag.setVisible(false);
-      (runner.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      this._playerTag.setVisible(false);
+      state.playerHiding = false;
       state.catcherName = catcherName;
-      if (isMultiplayer()) mpSendCaught(MP.localPeerId!, catcherName);
-
-      // Enter spectator mode if there are alive NPCs to watch
-      const aliveNPCs = this._npcs.filter((n: any) => n._alive);
-      if (aliveNPCs.length > 0 && !this._isFoxPlayer) {
-        state.spectating = true;
-        state.spectateIdx = 0;
-        this._updateSpectateCamera();
-        this._showMsg("Tab — переключить | ESC — выход", "#c8c8ff");
-      } else {
-        state.gameOver = true;
-        this.time.delayedCall(600, () => { this._triggerGameOver(); });
+      state.localDone = "caught";
+      if (this._minigame.active) this._endMinigame(false);
+      if (isMultiplayer()) {
+        mpSendCaught(MP.localPeerId!, catcherName); // host announces; clients were told by the host
+        this._mpStatus.set(MP.localPeerId!, "caught");
+        this._showMsg("ВАС ПОЙМАЛИ", "#ff3232");
       }
     } else {
-      runner.setVisible(false);
-      if (runner._tag) runner._tag.setVisible(false);
-      (runner.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
-      state.survivingNPCs = state.survivingNPCs.filter((n: any) => n !== runner);
-      this._showMsg(runner._name + " пойман!", "#ff5050");
-      if (isMultiplayer() && MP.isHost) mpSendNpcCaught(runner._name, catcherName);
-
-      // If spectating and current target died, cycle to next or end
-      if (state.spectating) {
-        const aliveNPCs = this._npcs.filter((n: any) => n._alive);
-        if (aliveNPCs.length === 0) {
-          state.spectating = false;
-          state.gameOver = true;
-          this.time.delayedCall(600, () => { this._triggerGameOver(); });
-        } else {
-          this._updateSpectateCamera();
-        }
-      }
-
-      if (this._isFoxPlayer) {
-        const aliveRunners = this._npcs.filter((n: any) => n._alive);
-        if (aliveRunners.length === 0) {
-          state.won = true;
-          this._triggerWin();
-        }
-      }
+      this._showMsg("Поймали: " + runner._name, "#ff5050");
     }
+    this._checkRoundEnd();
+  }
+
+  _escapeLocal() {
+    const state = this._state;
+    const player: any = this._player;
+    if (!player._alive || state.finishScheduled) return;
+    player._alive = false;
+    state.localDone = "escaped";
+    player.setVisible(false);
+    this._playerTag.setVisible(false);
+    (player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    (player.body as Phaser.Physics.Arcade.Body).enable = false;
+    if (isMultiplayer()) {
+      mpSendEscaped(MP.localPeerId!);
+      this._mpStatus.set(MP.localPeerId!, "escaped");
+      this._showMsg("ВЫ СБЕЖАЛИ! Ждём остальных…", "#64ff64");
+    }
+    this._checkRoundEnd();
+  }
+
+  _npcEscaped(npc: any) {
+    npc._alive = false;
+    npc._escaped = true;
+    npc.setVisible(false);
+    if (npc._tag) npc._tag.setVisible(false);
+    npc.body.setVelocity(0, 0);
+    npc.body.enable = false;
+    this._showMsg("На свободе: " + npc._name, "#64ff64");
+    this._checkRoundEnd();
+  }
+
+  /** Runner tally for HUD and results: bots in solo, runner players in multiplayer. */
+  _runnerCounts(): { total: number; alive: number; caught: number; escaped: number } {
+    let statuses: RunnerStatus[];
+    if (isMultiplayer()) {
+      statuses = [...this._mpStatus.values()].filter((st) => st !== "left");
+    } else {
+      statuses = this._npcs.map((n: any): RunnerStatus => n._alive ? "alive" : n._escaped ? "escaped" : "caught");
+      if (!this._isFoxPlayer) statuses.push(this._state.localDone || "alive");
+    }
+    const count = (st: RunnerStatus) => statuses.filter((x) => x === st).length;
+    return { total: statuses.length, alive: count("alive"), caught: count("caught"), escaped: count("escaped") };
+  }
+
+  /** Called after every catch / escape / disconnect: decides whether the round is over. */
+  _checkRoundEnd() {
+    const state = this._state;
+    if (state.finishScheduled) return;
+    if (isMultiplayer()) {
+      if (MP.isHost && this._runnerCounts().alive === 0) {
+        mpSendRoundEnd(Object.fromEntries(this._mpStatus));
+        this._scheduleFinish(600);
+      } else {
+        this._refreshSpectate();
+      }
+      return;
+    }
+    if (this._isFoxPlayer) {
+      if (this._runnerCounts().alive === 0) this._scheduleFinish(600);
+    } else if (state.localDone === "escaped") {
+      this._scheduleFinish(0);
+    } else if (state.localDone === "caught") {
+      if (this._spectateTargets().length === 0) this._scheduleFinish(600);
+      else this._refreshSpectate();
+    }
+  }
+
+  _scheduleFinish(delayMs: number) {
+    const state = this._state;
+    if (state.finishScheduled) return;
+    state.finishScheduled = true;
+    this.time.delayedCall(delayMs, () => this._finishRound());
+  }
+
+  _finishRound() {
+    const state = this._state;
+    if (state.finished) return;
+    state.finished = true;
+    const counts = this._runnerCounts();
+    const outcome = this._isFoxPlayer
+      ? (counts.caught > counts.escaped ? "hunt-won" : "hunt-lost")
+      : (state.localDone === "escaped" ? "escaped" : "caught");
+    const multiplayer = isMultiplayer();
+    hideFogOverlay();
+    destroyWorker();
+    // The host lingers a moment so the roundEnd message reaches everyone.
+    if (multiplayer) cleanupMultiplayer(MP.isHost ? 1500 : 0);
+    this.scene.start("Result", {
+      outcome, multiplayer,
+      playerName: this._playerName,
+      catcherName: state.catcherName,
+      keysCollected: state.keysCollected,
+      keysTotal: state.keysTotal,
+      elapsed: Math.floor(this.time.now / 1000 - state.startTime),
+      bossSpawned: state.bossSpawned,
+      ...counts,
+    });
+  }
+
+  _leaveToMenu() {
+    this._state.finished = true;
+    hideFogOverlay();
+    destroyWorker();
+    if (isMultiplayer()) cleanupMultiplayer();
+    this.scene.start("Menu");
+  }
+
+  /** Who a knocked-out player can watch: surviving bots, or surviving runner players in MP. */
+  _spectateTargets(): any[] {
+    if (!isMultiplayer()) return this._npcs.filter((n: any) => n._alive);
+    const out: any[] = [];
+    this._remotePlayers.forEach((rp, pid) => { if (this._mpStatus.get(pid) === "alive") out.push(rp.sprite); });
+    return out;
   }
 
   _getSpectateTarget(): any {
-    const aliveNPCs = this._npcs.filter((n: any) => n._alive);
-    if (aliveNPCs.length === 0) return null;
-    const idx = this._state.spectateIdx % aliveNPCs.length;
-    return aliveNPCs[idx];
+    const targets = this._spectateTargets();
+    return targets.length ? targets[this._state.spectateIdx % targets.length] : null;
   }
 
-  _updateSpectateCamera() {
+  _refreshSpectate() {
+    const state = this._state;
+    if (!state.localDone) return;
     const target = this._getSpectateTarget();
+    state.spectating = !!target;
     if (target) {
       this.cameras.main.startFollow(target, true, 0.08, 0.08);
       this._hud.spectateHUD.setText("👁 НАБЛЮДЕНИЕ: " + (target._name || "???") + "  [Tab — переключить | ESC — выход]");
-      this._hud.spectateHUD.setVisible(true);
+    } else {
+      this._hud.spectateHUD.setText(isMultiplayer() ? "Ожидание конца раунда…  [ESC — выход]" : "");
     }
-  }
-
-  _cycleSpectateTarget(dir: number) {
-    const aliveNPCs = this._npcs.filter((n: any) => n._alive);
-    if (aliveNPCs.length === 0) return;
-    this._state.spectateIdx = (this._state.spectateIdx + dir + aliveNPCs.length) % aliveNPCs.length;
-    this._updateSpectateCamera();
-  }
-
-  _triggerGameOver() {
-    hideFogOverlay();
-    destroyWorker();
-    this._cleanupMPCallbacks();
-    if (isMultiplayer()) cleanupMultiplayer();
-    this.scene.start("GameOver", {
-      catcherName: this._state.catcherName,
-      playerName: this._playerName,
-      keysCollected: this._state.keysCollected,
-      keysTotal: this._state.keysTotal,
-      escaped: this._state.escapedNPCs,
-      totalRunners: this._npcs.length,
-    });
-  }
-
-  _triggerWin() {
-    hideFogOverlay();
-    destroyWorker();
-    this._cleanupMPCallbacks();
-    if (isMultiplayer()) cleanupMultiplayer();
-    const elapsed = Math.floor(this.time.now / 1000 - this._state.startTime);
-    this.scene.start("Win", {
-      playerName: this._playerName,
-      keysCollected: this._state.keysCollected,
-      keysTotal: this._state.keysTotal,
-      elapsed,
-      bossSpawned: this._state.bossSpawned,
-      escaped: this._state.escapedNPCs,
-      totalRunners: this._npcs.length,
-    });
-  }
-
-  _cleanupMPCallbacks() {
-    if (isMultiplayer()) {
-      MP.onPeerPos = null; MP.onKeyCollected = null; MP.onDoorOpened = null;
-      MP.onBossSpawned = null; MP.onPeerCaught = null; MP.onPeerEscaped = null;
-      MP.onNpcPositions = null; MP.onNpcCaught = null; MP.onHostCatch = null;
-    }
+    this._hud.spectateHUD.setVisible(true);
   }
 
   _showMsg(txt: string, color?: string) {
@@ -1494,28 +1496,33 @@ export class GameScene extends Phaser.Scene {
   _setupMultiplayer() {
     const level = this._level;
     const state = this._state;
-    const player = this._player;
-    const fox = this._fox;
-    const npcs = this._npcs;
-    const exitObj = this._exitObj;
+    const player: any = this._player;
+
+    // Lobby callbacks point at the destroyed lobby UI — detach them.
+    MP.onPlayersUpdate = null; MP.onGameStart = null; MP.onCharAssigned = null;
+
+    this._mpStatus = new Map();
+    for (const peerId in MP.players) if (peerId !== MP.foxPlayerId) this._mpStatus.set(peerId, "alive");
 
     for (const peerId in MP.players) {
       if (peerId === MP.localPeerId) continue;
-      const pData = MP.players[peerId];
-      const charName = pData.character || "Naumi";
-      const spawnPos = tileCenter(level.playerSpawn.col, level.playerSpawn.row);
-      const rp = this.add.image(spawnPos.x, spawnPos.y, charName).setDepth(5).setAlpha(0.8);
-      rp.setScale(spriteScaleForHeight(charName, 30));
+      const charName = MP.players[peerId].character || RUNNER_NAMES[0];
+      const isFox = peerId === MP.foxPlayerId;
+      const spawn = isFox ? level.foxSpawn : level.playerSpawn;
+      const spawnPos = tileCenter(spawn.col, spawn.row);
+      const rp: any = this.add.image(spawnPos.x, spawnPos.y, charName).setDepth(5).setAlpha(0.8);
+      rp.setScale(spriteScaleForHeight(charName, isFox ? 36 : 30));
+      rp._name = charName;
       const rpTag = this.add.text(spawnPos.x, spawnPos.y - 14, charName, {
         fontFamily: "monospace", fontSize: "9px", color: COLORS[charName] || "#ffffff"
       }).setOrigin(0.5).setDepth(10);
-      this._remotePlayers.set(peerId, { sprite: rp, tag: rpTag, targetX: spawnPos.x, targetY: spawnPos.y });
+      this._remotePlayers.set(peerId, { sprite: rp, tag: rpTag, targetX: spawnPos.x, targetY: spawnPos.y, hiding: false, done: false });
     }
 
     MP.onPeerPos = (peerId: string, x: number, y: number, vx?: number, vy?: number) => {
-      if (peerId === "__fox__" && fox) {
-        fox.x += (x - fox.x) * 0.35;
-        fox.y += (y - fox.y) * 0.35;
+      if (peerId === "__fox__" && this._fox) {
+        this._fox.x += (x - this._fox.x) * 0.35;
+        this._fox.y += (y - this._fox.y) * 0.35;
         return;
       }
       if (peerId === "__boss__" && this._bossObj && this._bossObj.active) {
@@ -1529,86 +1536,54 @@ export class GameScene extends Phaser.Scene {
         rp.vx = vx || 0; rp.vy = vy || 0;
       }
     };
-
-    MP.onHostCatch = (catcherName: string) => {
-      if (!(player as any)._alive) return;
-      this._catchRunner(player, catcherName);
-    };
-
-    MP.onKeyCollected = (index) => {
-      if (index >= 0 && index < this._keyObjects.length && this._keyObjects[index].active) {
-        state.keysCollected++;
-        this._keyObjects[index].destroy();
-        if (state.keysCollected >= state.keysTotal) {
-          exitObj.setTexture("exit");
-          exitObj._locked = false;
-          this._showMsg("ВЫХОД ОТКРЫТ! БЕГИ!", "#32ff32");
-        }
-      }
-    };
-
-    MP.onDoorOpened = (index) => {
-      const doorData = this._lockedDoorObjects[index];
-      if (doorData) {
-        doorData.barriers.forEach((b: any) => { if (b.active) b.destroy(); });
-        doorData.data.doorTiles.forEach((d: any) => {
-          const chars = level.rows[d.row].split('');
-          chars[d.col] = '.';
-          level.rows[d.row] = chars.join('');
-          workerUpdateRow(d.row, level.rows[d.row]);
-        });
-      }
-    };
-
-    MP.onBossSpawned = () => {
-      if (!state.bossSpawned) this._spawnBoss();
-    };
-
-    MP.onPeerCaught = (peerId, catcherName) => {
+    MP.onHostCatch = (catcherName: string) => { if (player._alive) this._catchRunner(player, catcherName); };
+    MP.onKeyCollected = (index) => { this._collectKey(index, undefined, true); };
+    MP.onDoorOpened = (index) => { this._openLockedDoor(index, true); };
+    MP.onBossSpawned = () => { if (!state.bossSpawned) this._spawnBoss(); };
+    MP.onPeerCaught = (peerId, catcherName) => this._onPeerCaught(peerId, catcherName);
+    MP.onPeerEscaped = (peerId) => this._onPeerDone(peerId, "escaped");
+    MP.onPeerLeft = (peerId) => this._onPeerDone(peerId, "left");
+    MP.onPeerHiding = (peerId, hiding) => {
       const rp = this._remotePlayers.get(peerId);
-      if (rp && rp.sprite.active) {
-        rp.sprite.setVisible(false);
-        rp.tag.setVisible(false);
-        this.add.image(rp.sprite.x, rp.sprite.y, "blood").setScale(2.5).setDepth(0);
-        this.add.image(rp.sprite.x, rp.sprite.y, "corpse").setScale(2).setDepth(1);
-        this._showMsg(rp.tag.text + " пойман!", "#ff5050");
-        this.cameras.main.shake(200, 0.01);
-      }
+      if (rp) { rp.hiding = hiding; this._syncRemoteSprite(rp); }
     };
+    MP.onRoundEnd = (results) => {
+      this._mpStatus = new Map(Object.entries(results));
+      this._scheduleFinish(600);
+    };
+    MP.onHostLost = () => {
+      if (state.finishScheduled) return;
+      state.finishScheduled = true;
+      this._showMsg("Связь с хостом потеряна", "#ff6464");
+      this.time.delayedCall(2000, () => this._leaveToMenu());
+    };
+  }
 
-    MP.onPeerEscaped = (peerId) => {
-      const rp = this._remotePlayers.get(peerId);
-      if (rp && rp.sprite.active) {
-        rp.sprite.setVisible(false);
-        rp.tag.setVisible(false);
-        this._showMsg("Союзник сбежал!", "#64ff64");
-      }
-    };
+  _syncRemoteSprite(rp: any) {
+    const visible = !rp.hiding && !rp.done;
+    rp.sprite.setVisible(visible);
+    rp.tag.setVisible(visible);
+  }
 
-    MP.onNpcPositions = (npcDataArray) => {
-      if (MP.isHost) return;
-      npcDataArray.forEach((nd: any) => {
-        const npc = npcs.find((n: any) => n._name === nd.name);
-        if (npc && npc._alive) {
-          npc.x += (nd.x - npc.x) * 0.25;
-          npc.y += (nd.y - npc.y) * 0.25;
-        }
-      });
-    };
+  _onPeerCaught(peerId: string, catcherName: string) {
+    if (peerId === MP.localPeerId || this._mpStatus.get(peerId) !== "alive") return;
+    const rp = this._remotePlayers.get(peerId);
+    if (rp) this._spawnCorpse(rp.sprite.x, rp.sprite.y);
+    this._showMsg("Поймали: " + (rp ? rp.sprite._name : "???"), "#ff5050");
+    this._onPeerDone(peerId, "caught");
+  }
 
-    MP.onNpcCaught = (npcName, catcherName) => {
-      if (MP.isHost) return;
-      const npc = npcs.find((n: any) => n._name === npcName);
-      if (npc && npc._alive) {
-        npc._alive = false;
-        npc.setVisible(false);
-        if (npc._tag) npc._tag.setVisible(false);
-        this.add.image(npc.x, npc.y, "blood").setScale(2.5).setDepth(0);
-        this.add.image(npc.x, npc.y, "corpse").setScale(2).setDepth(1);
-        state.survivingNPCs = state.survivingNPCs.filter((n: any) => n !== npc);
-        this._showMsg(npcName + " пойман!", "#ff5050");
-        this.cameras.main.shake(200, 0.01);
-      }
-    };
+  /** A remote player is out of the round: caught, escaped or disconnected. */
+  _onPeerDone(peerId: string, status: RunnerStatus) {
+    if (peerId === MP.localPeerId) return;
+    const rp = this._remotePlayers.get(peerId);
+    const prev = this._mpStatus.get(peerId);
+    // A final result (caught / escaped) is never overwritten — peers disconnect right after the round.
+    if (prev !== undefined && prev !== "alive") return;
+    if (status === "escaped") this._showMsg("На свободе: " + (rp ? rp.sprite._name : "???"), "#64ff64");
+    if (status === "left" && rp && !rp.done) this._showMsg("Игрок отключился: " + rp.sprite._name, "#c8c8c8");
+    if (prev !== undefined) this._mpStatus.set(peerId, status);
+    if (rp) { rp.done = true; this._syncRemoteSprite(rp); }
+    this._checkRoundEnd();
   }
 }

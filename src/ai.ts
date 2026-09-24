@@ -2,9 +2,12 @@
 //  ASSYLUM — ai.ts — Pathfinding & AI behaviours
 // ============================================================
 import {
-  MAP_W, MAP_H, TILE, tileKey, sameTile, tileDist, clamp, shuffle, Tile, worldToTile,
+  MAP_W, MAP_H, TILE, tileKey, sameTile, tileDist, clamp, shuffle, Tile,
 } from "./config";
-import { LevelData } from "./level";
+import type { LevelData } from "./level";
+
+/** Any row-major char grid: level rows (string[]) or a generator grid (string[][]). */
+export type Grid = ReadonlyArray<ArrayLike<string>>;
 
 // ── Raycasting visibility (fog of war) ───────────────────────
 export function computeVisibility(rows: string[], cx: number, cy: number, radius: number): Set<string> {
@@ -74,6 +77,30 @@ export function findPath(rows: string[], start: Tile, goal: Tile): Tile[] {
     cur = cameFrom.get(tileKey(cur.col, cur.row)) ?? null;
   }
   return path;
+}
+
+/** BFS step distance from `from` to every tile, indexed row * MAP_W + col; -1 = unreachable. */
+export function distanceMap(rows: Grid, from: Tile): Int32Array {
+  const dist = new Int32Array(MAP_W * MAP_H).fill(-1);
+  const queue = new Int32Array(MAP_W * MAP_H);
+  let head = 0, tail = 0;
+  const start = from.row * MAP_W + from.col;
+  dist[start] = 0;
+  queue[tail++] = start;
+  while (head < tail) {
+    const cur = queue[head++];
+    const c = cur % MAP_W, r = (cur - c) / MAP_W;
+    const d = dist[cur] + 1;
+    if (c > 0 && dist[cur - 1] < 0 && rows[r][c - 1] !== "#") { dist[cur - 1] = d; queue[tail++] = cur - 1; }
+    if (c < MAP_W - 1 && dist[cur + 1] < 0 && rows[r][c + 1] !== "#") { dist[cur + 1] = d; queue[tail++] = cur + 1; }
+    if (r > 0 && dist[cur - MAP_W] < 0 && rows[r - 1][c] !== "#") { dist[cur - MAP_W] = d; queue[tail++] = cur - MAP_W; }
+    if (r < MAP_H - 1 && dist[cur + MAP_W] < 0 && rows[r + 1][c] !== "#") { dist[cur + MAP_W] = d; queue[tail++] = cur + MAP_W; }
+  }
+  return dist;
+}
+
+export function distanceTo(dist: Int32Array, t: Tile): number {
+  return dist[t.row * MAP_W + t.col];
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -190,15 +217,25 @@ export function chooseSearchTile(level: LevelData, fromTile: Tile, focusTile: Ti
   return candidates.find(t => tileDist(t, fromTile) < 60) || focusTile || fromTile;
 }
 
-export function chooseObjectiveTile(level: LevelData, fromTile: Tile, keyObjects: any[], exitLocked: boolean): Tile | null {
-  if (!exitLocked) return level.exitTile;
-  const active = keyObjects
-    .filter((k: any) => k.active !== false)
-    .map((k: any) => worldToTile(k));
-  let best: Tile | null = null, bestDist = Infinity;
-  for (const kt of active) {
-    const d = tileDist(fromTile, kt);
-    if (d < bestDist) { bestDist = d; best = kt; }
-  }
-  return best;
+export interface GoalCandidate { tile: Tile; index: number; }
+export interface RunnerGoal extends GoalCandidate { kind: "exit" | "key" | "terminal"; }
+
+/**
+ * Nearest objective a runner bot can actually walk to: the exit once it is open,
+ * otherwise a key, otherwise a terminal whose door guards a key.
+ */
+export function chooseRunnerGoal(
+  rows: Grid, from: Tile, exit: Tile | null, keys: GoalCandidate[], terminals: GoalCandidate[],
+): RunnerGoal | null {
+  const dist = distanceMap(rows, from);
+  const nearest = (cands: GoalCandidate[], kind: RunnerGoal["kind"]): RunnerGoal | null => {
+    let best: RunnerGoal | null = null, bestD = Infinity;
+    for (const c of cands) {
+      const d = distanceTo(dist, c.tile);
+      if (d >= 0 && d < bestD) { bestD = d; best = { ...c, kind }; }
+    }
+    return best;
+  };
+  if (exit) return nearest([{ tile: exit, index: -1 }], "exit");
+  return nearest(keys, "key") || nearest(terminals, "terminal");
 }

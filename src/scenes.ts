@@ -5,7 +5,8 @@ import Phaser from "phaser";
 import {
   CANVAS_W, CANVAS_H, COLORS, SPRITE_DIMENSIONS,
   bgmVolume, setBgmVolume, bgmAudio,
-  currentDifficulty, setDifficulty, getDiff, clamp,
+  currentDifficulty, setDifficulty, getDiff,
+  RUNNER_NAMES, HUNTER_NAME, BOSS_NAME,
 } from "./config";
 import { registerGeneratedTextures, loadPNGSprites } from "./sprites";
 import { hideFogOverlay } from "./perf";
@@ -30,6 +31,27 @@ function phaserBtn(
   btn.on("pointerout",  () => { btn.setFillStyle(bgColor); });
   btn.on("pointerdown", cb);
   return { btn, txt };
+}
+
+const DIFFICULTIES = [
+  { id: "easy", label: "ЛЕГКО", clr: 0x3cb43c },
+  { id: "normal", label: "НОРМА", clr: 0xc8a028 },
+  { id: "hard", label: "СЛОЖНО", clr: 0xc82828 },
+];
+
+/** Row of three difficulty toggles centred on the canvas. */
+function difficultyPicker(scene: Phaser.Scene, y: number, h: number, fontSize: string) {
+  const btns: Phaser.GameObjects.Rectangle[] = [];
+  DIFFICULTIES.forEach((d, i) => {
+    const bx = CANVAS_W / 2 + (i - 1) * 130;
+    const bg = scene.add.rectangle(bx, y, 110, h, d.id === currentDifficulty ? d.clr : 0x231414).setInteractive({ useHandCursor: true });
+    scene.add.text(bx, y, d.label, { fontFamily: "monospace", fontSize, color: "#dcc8c8" }).setOrigin(0.5);
+    bg.on("pointerdown", () => {
+      setDifficulty(d.id);
+      btns.forEach((b, j) => { b.setFillStyle(j === i ? DIFFICULTIES[j].clr : 0x231414); });
+    });
+    btns.push(bg);
+  });
 }
 
 // ── BOOT SCENE ───────────────────────────────────────────────
@@ -86,7 +108,7 @@ export class MenuScene extends Phaser.Scene {
     this.tweens.add({ targets: quoteTxt, alpha: 1, delay: 500, duration: 600, ease: "Power2" });
 
     // Character preview row
-    const runners = ["Naumi", "Kuruna", "Wite", "Sumrak", "Yoko"];
+    const runners = RUNNER_NAMES;
     const previewY = 185, spacing = 90;
     const rowStart = CX - (runners.length - 1) * spacing / 2;
     runners.forEach((name, i) => {
@@ -191,23 +213,7 @@ export class SelectScene extends Phaser.Scene {
     this.add.text(W / 2, 60, "ВЫБЕРИ ПЕРСОНАЖА", { fontFamily: "monospace", fontSize: "28px", color: "#b40000" }).setOrigin(0.5);
     this.add.text(W / 2, 100, "Собери ключи, помоги всем сбежать и выйди!", { fontFamily: "monospace", fontSize: "13px", color: "#785a5a" }).setOrigin(0.5);
 
-    // Difficulty
-    const diffs = [
-      { id: "easy", label: "ЛЕГКО", clr: 0x3cb43c },
-      { id: "normal", label: "НОРМА", clr: 0xc8a028 },
-      { id: "hard", label: "СЛОЖНО", clr: 0xc82828 },
-    ];
-    const diffBtns: Phaser.GameObjects.Rectangle[] = [];
-    diffs.forEach((d, i) => {
-      const bx = W / 2 + (i - 1) * 130;
-      const bg = this.add.rectangle(bx, 138, 110, 30, d.id === currentDifficulty ? d.clr : 0x231414).setInteractive({ useHandCursor: true });
-      this.add.text(bx, 138, d.label, { fontFamily: "monospace", fontSize: "13px", color: "#dcc8c8" }).setOrigin(0.5);
-      bg.on("pointerdown", () => {
-        setDifficulty(d.id);
-        diffBtns.forEach((b, j) => { b.setFillStyle(j === i ? diffs[j].clr : 0x231414); });
-      });
-      diffBtns.push(bg);
-    });
+    difficultyPicker(this, 138, 30, "13px");
 
     // Characters (including Fox as villain)
     const runners = [
@@ -264,23 +270,8 @@ export class LobbyScene extends Phaser.Scene {
     let isReady = false;
 
     // ── Difficulty picker ─────────────────────────────────
-    const diffs = [
-      { id: "easy", label: "ЛЕГКО", clr: 0x3cb43c },
-      { id: "normal", label: "НОРМА", clr: 0xc8a028 },
-      { id: "hard", label: "СЛОЖНО", clr: 0xc82828 },
-    ];
-    const diffLabelTxt = this.add.text(W / 2, 68, "Сложность:", { fontFamily: "monospace", fontSize: "12px", color: "#786464" }).setOrigin(0.5);
-    const diffBtns: Phaser.GameObjects.Rectangle[] = [];
-    diffs.forEach((d, i) => {
-      const bx = W / 2 + (i - 1) * 130;
-      const bg = this.add.rectangle(bx, 92, 110, 28, d.id === currentDifficulty ? d.clr : 0x231414).setInteractive({ useHandCursor: true });
-      this.add.text(bx, 92, d.label, { fontFamily: "monospace", fontSize: "12px", color: "#dcc8c8" }).setOrigin(0.5);
-      bg.on("pointerdown", () => {
-        setDifficulty(d.id);
-        diffBtns.forEach((b, j) => { b.setFillStyle(j === i ? diffs[j].clr : 0x231414); });
-      });
-      diffBtns.push(bg);
-    });
+    this.add.text(W / 2, 68, "Сложность:", { fontFamily: "monospace", fontSize: "12px", color: "#786464" }).setOrigin(0.5);
+    difficultyPicker(this, 92, 28, "12px");
 
     const statusTxt = this.add.text(W / 2, 270, "", { fontFamily: "monospace", fontSize: "16px", color: "#b4a0a0" }).setOrigin(0.5);
     const roomCodeTxt = this.add.text(W / 2, 320, "", { fontFamily: "monospace", fontSize: "14px", color: "#ffc864", wordWrap: { width: W * 0.85 } }).setOrigin(0.5);
@@ -288,13 +279,13 @@ export class LobbyScene extends Phaser.Scene {
     const inputTxt = this.add.text(W / 2, 330, "_", { fontFamily: "monospace", fontSize: "28px", color: "#ffffc8" }).setOrigin(0.5).setVisible(false);
 
     // Character picker
-    const charNames = ["Naumi", "Kuruna", "Wite", "Sumrak", "Yoko", "Foxmind"];
+    const charNames = [...RUNNER_NAMES, HUNTER_NAME];
     const charY = 460;
     const charBtns: (Phaser.GameObjects.Rectangle & { _charName?: string })[] = [];
     this.add.text(W / 2, charY - 20, "Персонаж:", { fontFamily: "monospace", fontSize: "12px", color: "#786464" }).setOrigin(0.5);
     charNames.forEach((name, i) => {
       const bx = W / 2 + (i - 2.5) * 80;
-      const isVillain = name === "Foxmind";
+      const isVillain = name === HUNTER_NAME;
       const btn = this.add.rectangle(bx, charY, 65, 30, name === selectedChar ? 0x3c1414 : 0x1e0f0f).setInteractive({ useHandCursor: true }) as Phaser.GameObjects.Rectangle & { _charName?: string };
       if (isVillain) btn.setStrokeStyle(1, 0x882222);
       this.add.text(bx, charY, name, { fontFamily: "monospace", fontSize: "9px", color: COLORS[name] || "#ffffff" }).setOrigin(0.5);
@@ -428,6 +419,11 @@ export class LobbyScene extends Phaser.Scene {
         updateCharBtns();
         setupPlayersList();
         MP.onCharAssigned = (ch) => { selectedChar = ch; updateCharBtns(); };
+        MP.onHostLost = () => {
+          statusTxt.setText("Хост закрыл комнату");
+          readyBtn.setVisible(false); readyBtnTxt.setVisible(false);
+          cleanupMultiplayer();
+        };
         MP.onGameStart = (data: any) => {
           this.scene.start("Game", { playerName: selectedChar, difficulty: data.difficulty || "normal" });
         };
@@ -455,6 +451,8 @@ export class LobbyScene extends Phaser.Scene {
     const urlParams = new URLSearchParams(location.search);
     const autoRoom = urlParams.get("room");
     if (autoRoom) {
+      // One-shot: drop ?room= so returning to the lobby later doesn't rejoin a finished room.
+      history.replaceState(null, "", location.pathname);
       mode = "joining";
       inputCode = autoRoom.toUpperCase();
       createBtn.setVisible(false); createTxt.setVisible(false);
@@ -468,64 +466,55 @@ export class LobbyScene extends Phaser.Scene {
   }
 }
 
-// ── GAME OVER SCENE ──────────────────────────────────────────
-export class GameOverScene extends Phaser.Scene {
+// ── RESULT SCENE (end of every round, runner or hunter) ──────
+type Outcome = "escaped" | "caught" | "hunt-won" | "hunt-lost";
+
+const OUTCOME_VIEW: Record<Outcome, { title: string; color: string; good: boolean }> = {
+  "escaped":   { title: "ВЫ СБЕЖАЛИ!",   color: "#32dc32", good: true },
+  "caught":    { title: "ВАС ПОЙМАЛИ",   color: "#b40000", good: false },
+  "hunt-won":  { title: "ОХОТА УДАЛАСЬ", color: "#dc3232", good: true },
+  "hunt-lost": { title: "ДОБЫЧА УШЛА",   color: "#8c7878", good: false },
+};
+
+export class ResultScene extends Phaser.Scene {
   _data: any;
-  constructor() { super("GameOver"); }
+  constructor() { super("Result"); }
   init(data: any) { this._data = data; }
   create() {
     hideFogOverlay();
     this.cameras.main.setBackgroundColor("#000000");
-    const W = CANVAS_W, H = CANVAS_H, d = this._data;
+    const W = CANVAS_W, d = this._data;
+    const outcome: Outcome = d.outcome in OUTCOME_VIEW ? d.outcome : "caught";
+    const view = OUTCOME_VIEW[outcome];
+    const isHunter = outcome === "hunt-won" || outcome === "hunt-lost";
 
-    this.add.text(W / 2, 160, "ВАС ПОЙМАЛИ", { fontFamily: "monospace", fontSize: "52px", color: "#b40000" }).setOrigin(0.5);
-    this.add.text(W / 2, 240, (d.playerName || "???") + " не выжил", {
-      fontFamily: "monospace", fontSize: "22px", color: COLORS[d.playerName] || "#ffffff"
-    }).setOrigin(0.5);
-    this.add.text(W / 2, 290, "Поймал: " + (d.catcherName || "???"), {
-      fontFamily: "monospace", fontSize: "18px", color: d.catcherName === "Желочь" ? "#50c850" : "#dc3c3c"
-    }).setOrigin(0.5);
-    this.add.text(W / 2, 340, "Собрано ключей: " + (d.keysCollected || 0) + " / " + (d.keysTotal || 5), {
-      fontFamily: "monospace", fontSize: "16px", color: "#968250"
-    }).setOrigin(0.5);
-    if (d.escaped !== undefined) {
-      this.add.text(W / 2, 370, "Спасено: " + d.escaped + "/" + (d.totalRunners || 4), {
-        fontFamily: "monospace", fontSize: "16px", color: "#96c896"
-      }).setOrigin(0.5);
-    }
-
-    phaserBtn(this, W / 2 - 110, 420, 200, 44, "СНОВА", () => { this.scene.start("Game", { playerName: d.playerName }); });
-    phaserBtn(this, W / 2 + 110, 420, 200, 44, "В МЕНЮ", () => { this.scene.start("Menu"); });
-    phaserBtn(this, W / 2, 490, 200, 44, "СМЕНА ПЕРСОНАЖА", () => { this.scene.start("Select"); });
-    this.input.keyboard!.on("keydown-ESC", () => { this.scene.start("Menu"); });
-  }
-}
-
-// ── WIN SCENE ────────────────────────────────────────────────
-export class WinScene extends Phaser.Scene {
-  _data: any;
-  constructor() { super("Win"); }
-  init(data: any) { this._data = data; }
-  create() {
-    hideFogOverlay();
-    this.cameras.main.setBackgroundColor("#000000");
-    const W = CANVAS_W, H = CANVAS_H, d = this._data;
-
-    this.add.text(W / 2, 150, "ВЫ СБЕЖАЛИ!", { fontFamily: "monospace", fontSize: "56px", color: "#32dc32" }).setOrigin(0.5);
-
+    this.add.text(W / 2, 130, view.title, { fontFamily: "monospace", fontSize: "54px", color: view.color }).setOrigin(0.5);
     if (this.textures.exists(d.playerName)) {
       const dim = SPRITE_DIMENSIONS[d.playerName] || { width: 16, height: 16 };
-      this.add.image(W / 2, 250, d.playerName).setOrigin(0.5).setScale(72 / dim.height);
+      const portrait = this.add.image(W / 2, 222, d.playerName).setOrigin(0.5).setScale(72 / dim.height);
+      if (!view.good) portrait.setTint(0x505050);
     }
-    this.add.text(W / 2, 290, d.playerName || "", { fontFamily: "monospace", fontSize: "20px", color: COLORS[d.playerName] || "#ffffff" }).setOrigin(0.5);
+    this.add.text(W / 2, 272, d.playerName || "", { fontFamily: "monospace", fontSize: "20px", color: COLORS[d.playerName] || "#ffffff" }).setOrigin(0.5);
 
     const mins = Math.floor((d.elapsed || 0) / 60), secs = (d.elapsed || 0) % 60;
-    let statsText = "Ключи: " + (d.keysCollected || 0) + "/" + (d.keysTotal || 5) + "\nВремя: " + mins + "м " + secs + "с";
-    if (d.escaped !== undefined) statsText += "\nСпасено: " + d.escaped + "/" + (d.totalRunners || 4);
-    if (d.bossSpawned) statsText += "\n✓ Пережил Желочь";
-    this.add.text(W / 2, 345, statsText, { fontFamily: "monospace", fontSize: "16px", color: "#96c896", align: "center" }).setOrigin(0.5);
+    const lines: string[] = [];
+    if (outcome === "caught") lines.push("Поймал: " + (d.catcherName || "???"));
+    if (!isHunter) lines.push("Ключи: " + (d.keysCollected || 0) + "/" + (d.keysTotal || 0));
+    lines.push(isHunter
+      ? "Поймано: " + (d.caught || 0) + "/" + (d.total || 0) + "  ·  Сбежали: " + (d.escaped || 0)
+      : "Спасены: " + (d.escaped || 0) + "/" + (d.total || 0));
+    lines.push("Время: " + mins + "м " + secs + "с");
+    if (outcome === "escaped" && d.bossSpawned) lines.push("✓ " + BOSS_NAME + " проснулась — и не догнала");
+    this.add.text(W / 2, 345, lines.join("\n"), {
+      fontFamily: "monospace", fontSize: "16px", align: "center",
+      color: outcome === "caught" && d.catcherName === BOSS_NAME ? "#50c850" : view.good ? "#96c896" : "#b49696",
+    }).setOrigin(0.5);
 
-    phaserBtn(this, W / 2 - 110, 450, 200, 44, "ЕЩЁ РАЗ", () => { this.scene.start("Game", { playerName: d.playerName }); }, 0x003c00, "#96c896");
+    // After a multiplayer round the session is closed; "again" means a fresh lobby.
+    const again = d.multiplayer
+      ? { label: "В ЛОББИ", cb: () => this.scene.start("Lobby") }
+      : { label: "СНОВА", cb: () => this.scene.start("Game", { playerName: d.playerName }) };
+    phaserBtn(this, W / 2 - 110, 450, 200, 44, again.label, again.cb, view.good ? 0x003c00 : 0x3c0000, view.good ? "#96c896" : "#c89696");
     phaserBtn(this, W / 2 + 110, 450, 200, 44, "В МЕНЮ", () => { this.scene.start("Menu"); });
     phaserBtn(this, W / 2, 520, 200, 44, "СМЕНА ПЕРСОНАЖА", () => { this.scene.start("Select"); });
     this.input.keyboard!.on("keydown-ESC", () => { this.scene.start("Menu"); });
