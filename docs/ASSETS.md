@@ -234,6 +234,27 @@
 
 По желанию (P3) добавь `<имя>_caught.png` — персонаж лежит на полу.
 
+### F2. Заражённые скины (P1, этап 6)
+
+Злодей теперь — заражённый персонаж, а не Лиса или Желочь. Нужен заражённый вариант каждого
+из пяти героев в той же позе, что сейчас (лицом к камере). Ракурсы из раздела F для
+заражённых — потом, тем же способом.
+
+**Куда класть:** `art/characters/`, 1024×1024, дальше `npm run assets`:
+`naumi_infected.png`, `kuruna_infected.png`, `wite_infected.png`, `sumrak_infected.png`,
+`yoko_infected.png`.
+
+**К запросу прикладывай две картинки:**
+1. текущий спрайт героя из `public/Sprite/` — это кого рисовать;
+2. `public/Sprite/Foxmind.png` — это как выглядит заражение.
+
+**Промпт:**
+> Chibi pixel-art game sprite. The first attached image is the exact character: keep the same hair, face shape, outfit, colors and proportions. The second attached image shows the style of the infection. Draw the INFECTED version of the first character: sickly pale gray-green skin with dark veins, eyes glowing red, dried blood around the mouth and on the clothes, torn and stained clothes, slightly hunched predatory pose with clawed fingers. Same chibi pixel-art style, same size and framing as the first image, facing toward the camera, standing, full body, clean dark outline. Flat lighting, no shadow on the ground. Single character, centered, transparent background, no text.
+
+Герой должен узнаваться с первого взгляда: причёска, цвета и одежда те же, меняются кожа,
+глаза, кровь и поза. Пока картинок нет, игра рисует заглушку: здоровый спрайт, перекрашенный
+в болезненный цвет.
+
 ---
 
 ## G. Интерфейс (P3)
