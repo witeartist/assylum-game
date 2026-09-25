@@ -18,6 +18,15 @@ function box(w: number, topH: number, frontH: number, top: string, front: string
   return c;
 }
 
+/** Generic furniture stand-in: a box with the footprint's proportions, tinted per object. */
+export function furnitureBox(key: string, w: number, h: number): HTMLCanvasElement {
+  let hash = 0;
+  for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = hash % 360;
+  const px = 40;
+  return box(w * px, h * px * 0.8, px * 0.55, `hsl(${hue},12%,42%)`, `hsl(${hue},12%,28%)`);
+}
+
 export const PROP_ART: Record<string, () => HTMLCanvasElement> = {
   "interactive/locker_closed": () => box(56, 16, 84, "#56616a", "#46515a", ctx => {
     ctx.fillStyle = "#39434b"; ctx.fillRect(4, 20, 22, 76); ctx.fillRect(30, 20, 22, 76);
@@ -32,49 +41,83 @@ export const PROP_ART: Record<string, () => HTMLCanvasElement> = {
     ctx.fillStyle = "#56605f";
     for (let y = 33; y < 43; y += 4) for (let x = 8; x < 38; x += 7) ctx.fillRect(x, y, 5, 3);
   }),
-  // Locked doors are drawn like walls: a plate on the cap and a metal front.
-  "interactive/door_top": () => {
-    const [c, ctx] = canvas(64, 64);
-    ctx.fillStyle = "#34383a"; ctx.fillRect(0, 0, 64, 64);
-    ctx.fillStyle = "#b8901e";
-    for (let i = -64; i < 64; i += 16) { ctx.beginPath(); ctx.moveTo(i, 64); ctx.lineTo(i + 8, 64); ctx.lineTo(i + 72, 0); ctx.lineTo(i + 64, 0); ctx.fill(); }
-    ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(6, 6, 52, 52);
-    ctx.strokeStyle = "#1a1c1d"; ctx.lineWidth = 3; ctx.strokeRect(1.5, 1.5, 61, 61);
-    return c;
-  },
-  "interactive/door_face": () => {
-    const [c, ctx] = canvas(64, 32);
-    ctx.fillStyle = "#4b5256"; ctx.fillRect(0, 0, 64, 32);
-    ctx.fillStyle = "#3a4043"; ctx.fillRect(4, 3, 26, 27); ctx.fillRect(34, 3, 26, 27);
-    ctx.fillStyle = "#9aa3a8"; for (const x of [6, 26, 36, 56]) for (const y of [5, 26]) ctx.fillRect(x, y, 2, 2);
-    ctx.fillStyle = "#ff3030"; ctx.fillRect(30, 12, 4, 4);
-    ctx.fillStyle = "#1b1d1e"; ctx.fillRect(0, 29, 64, 3);
-    return c;
-  },
-  "interactive/exit_closed": () => {
-    const [c, ctx] = canvas(72, 72);
-    ctx.fillStyle = "#2c3133"; ctx.fillRect(4, 4, 64, 64);
-    ctx.fillStyle = "#454c50"; ctx.fillRect(10, 10, 52, 52);
-    ctx.strokeStyle = "#8a6d24"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(10, 10); ctx.lineTo(62, 62); ctx.moveTo(62, 10); ctx.lineTo(10, 62); ctx.stroke();
-    ctx.fillStyle = "#c9a227"; ctx.fillRect(30, 30, 12, 12);
-    ctx.strokeStyle = "#101213"; ctx.lineWidth = 2; ctx.strokeRect(4, 4, 64, 64);
-    return c;
-  },
-  "interactive/exit_open": () => {
-    const [c, ctx] = canvas(72, 72);
-    ctx.fillStyle = "#2c3133"; ctx.fillRect(4, 4, 64, 64);
-    const g = ctx.createLinearGradient(0, 10, 0, 62);
-    g.addColorStop(0, "#030504"); g.addColorStop(1, "#0f2a17");
-    ctx.fillStyle = g; ctx.fillRect(10, 10, 52, 52);
-    ctx.fillStyle = "#3a4a3e"; for (let y = 16; y < 60; y += 9) ctx.fillRect(14, y, 44, 3);
-    ctx.fillStyle = "#33ff66"; ctx.fillRect(28, 0, 16, 6);
-    return c;
-  },
-  "props/lamp_fixture": () => {
+  "interactive/door_metal_h": () => box(64, 10, 66, "#3b4145", "#4b5256", ctx => {
+    ctx.fillStyle = "#3a4043"; ctx.fillRect(8, 16, 48, 54);
+    ctx.fillStyle = "#1c1f20"; for (let x = 20; x < 44; x += 5) ctx.fillRect(x, 22, 2, 10);
+    ctx.fillStyle = "#9aa3a8"; ctx.fillRect(46, 44, 6, 3);
+  }),
+  "interactive/door_metal_v": () => box(34, 10, 66, "#3b4145", "#454c50", ctx => {
+    ctx.fillStyle = "#30363a"; ctx.fillRect(6, 16, 22, 54);
+  }),
+  "interactive/exit_door_closed": () => box(120, 10, 84, "#2d3336", "#4a5357", ctx => {
+    ctx.fillStyle = "#3c4448"; ctx.fillRect(10, 22, 48, 70); ctx.fillRect(62, 22, 48, 70);
+    ctx.fillStyle = "#1c7a3a"; ctx.fillRect(44, 12, 32, 9);
+    ctx.strokeStyle = "#8a6d24"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(40, 58); ctx.lineTo(80, 50); ctx.stroke();
+  }),
+  "interactive/exit_door_open": () => box(120, 10, 84, "#2d3336", "#4a5357", ctx => {
+    ctx.fillStyle = "#050806"; ctx.fillRect(18, 22, 84, 70);
+    ctx.fillStyle = "#3c4448"; ctx.fillRect(4, 22, 16, 70); ctx.fillRect(100, 22, 16, 70);
+    ctx.fillStyle = "#33ff66"; ctx.fillRect(44, 12, 32, 9);
+  }),
+  // Wooden ward doors: front view (in a left–right wall), edge-on (in an up–down wall), and open.
+  // Closed doors in left–right walls are as low as a thin wall (THIN_WALL + WALL_HEIGHT per tile).
+  "interactive/door_wood_h": () => box(40, 5, 30, "#4a3a2e", "#5c4636", ctx => {
+    ctx.fillStyle = "#4b392c"; ctx.fillRect(5, 8, 30, 25);
+    ctx.fillStyle = "#1a1f22"; ctx.fillRect(12, 11, 16, 8);
+    ctx.fillStyle = "rgba(160,190,200,0.25)"; ctx.fillRect(13, 12, 6, 6);
+    ctx.fillStyle = "#b9b09a"; ctx.fillRect(30, 22, 3, 2);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(5, 28, 30, 4);
+  }),
+  "interactive/door_wood_h2": () => box(80, 5, 30, "#4a3a2e", "#5c4636", ctx => {
+    ctx.fillStyle = "#4b392c"; ctx.fillRect(4, 8, 35, 25); ctx.fillRect(41, 8, 35, 25);
+    ctx.fillStyle = "#1a1f22"; ctx.beginPath(); ctx.arc(21, 16, 5, 0, 7); ctx.arc(59, 16, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(39, 6, 2, 28);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(4, 28, 35, 4); ctx.fillRect(41, 28, 35, 4);
+  }),
+  // An open leaf seen edge-on, swung out of the doorway: its long top edge, then its end.
+  "interactive/door_wood_h_open": () => box(8, 40, 16, "#6a5140", "#3a2d24", ctx => {
+    ctx.fillStyle = "rgba(255,240,220,0.18)"; ctx.fillRect(1, 1, 2, 38);
+    ctx.fillStyle = "#b9b09a"; ctx.fillRect(5, 46, 2, 3);
+  }),
+  "interactive/door_wood_v": () => box(10, 4, 56, "#4a3a2e", "#3a2d24", ctx => {
+    ctx.fillStyle = "#b9b09a"; ctx.fillRect(3, 30, 4, 2);
+  }),
+  // Swung open from a wall running up–down: the leaf across the floor, its face towards us.
+  "interactive/door_wood_v_open": () => box(36, 4, 31, "#4a3a2e", "#56412f", ctx => {
+    ctx.fillStyle = "#47362a"; ctx.fillRect(4, 7, 28, 25);
+    ctx.fillStyle = "#1a1f22"; ctx.fillRect(10, 10, 14, 7);
+    ctx.fillStyle = "rgba(160,190,200,0.2)"; ctx.fillRect(11, 11, 5, 5);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(4, 28, 28, 4);
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 4, 3, 31);
+  }),
+  "interactive/fuse_box": () => box(40, 8, 48, "#3a4146", "#4b555b", ctx => {
+    ctx.fillStyle = "#2a3034"; ctx.fillRect(5, 13, 30, 38);
+    ctx.fillStyle = "#11161a"; for (let y = 17; y < 47; y += 8) ctx.fillRect(9, y, 22, 5);
+    ctx.fillStyle = "#e8c02a"; ctx.fillRect(12, 50, 16, 3);
+    ctx.fillStyle = "#ff4a3a"; ctx.fillRect(31, 15, 2, 2);
+  }),
+  "interactive/fuse_box_on": () => box(40, 8, 48, "#3a4146", "#4b555b", ctx => {
+    ctx.fillStyle = "#2a3034"; ctx.fillRect(5, 13, 30, 38);
+    ctx.fillStyle = "#c9b27a"; for (let y = 17; y < 47; y += 8) ctx.fillRect(9, y, 22, 5);
+    ctx.fillStyle = "#e8c02a"; ctx.fillRect(12, 50, 16, 3);
+    ctx.fillStyle = "#3dff7a"; ctx.fillRect(31, 15, 2, 2); ctx.fillRect(31, 20, 2, 2);
+  }),
+  "props/lamp_fluorescent": () => {
     const [c, ctx] = canvas(64, 16);
     ctx.fillStyle = "#3a3f42"; ctx.fillRect(0, 2, 64, 12);
     ctx.fillStyle = "#f4f8ff"; ctx.fillRect(4, 5, 56, 3); ctx.fillRect(4, 9, 56, 2);
+    return c;
+  },
+  "props/lamp_emergency": () => {
+    const [c, ctx] = canvas(24, 16);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(0, 2, 24, 12);
+    ctx.fillStyle = "#ff5a4a"; ctx.fillRect(4, 5, 16, 6);
+    return c;
+  },
+  "props/lamp_broken": () => {
+    const [c, ctx] = canvas(64, 16);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(0, 2, 64, 12);
+    ctx.fillStyle = "#c9ced6"; ctx.fillRect(4, 5, 30, 3); ctx.fillRect(40, 7, 20, 2);
     return c;
   },
 };

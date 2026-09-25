@@ -1,7 +1,6 @@
 // The round. Builds the world (level, actors, systems) and runs the systems each frame.
 import Phaser from "phaser";
 import { WORLD_W, WORLD_H } from "../core/constants";
-import { playMusic } from "../core/audio";
 import { randomSeed } from "../core/rng";
 import { CHARACTERS, RUNNER_IDS, type CharacterId } from "../data/characters";
 import { DIFFICULTIES, type DifficultyId } from "../data/difficulty";
@@ -11,9 +10,15 @@ import { World, type NetMode } from "../game/World";
 import { spawnHunterAI, spawnLocalPlayer, spawnRemotePlayer, spawnRunnerBot } from "../game/spawn";
 import { generateLevel } from "../world/levelgen";
 import { CollisionLayer } from "../world/collision";
+import { furnitureTiles } from "../world/level";
 import { WorldView } from "../render/worldView";
+import { furnitureLayout } from "../render/propLayout";
 import { CameraRig } from "../render/cameraRig";
 import { addDust } from "../render/dust";
+import { Shadows } from "../render/shadows";
+import { Outlines } from "../render/outlines";
+import { Footprints } from "../render/footprints";
+import { Soundscape } from "../systems/sound";
 import { LIGHTING_PIPELINE, LightingPipeline } from "../render/lighting/LightingPipeline";
 import { Lighting } from "../systems/lighting";
 import { FoxFlash } from "../systems/foxFlash";
@@ -26,12 +31,20 @@ import { Noise } from "../systems/noise";
 import { Vision } from "../systems/vision";
 import { InputSystem } from "../systems/input";
 import { NetSync } from "../systems/netsync";
+import { Vitals } from "../systems/vitals";
+import { Items } from "../systems/items";
+import { Power } from "../systems/power";
+import { Interact } from "../systems/interact";
+import { Gates } from "../systems/gates";
+import { Scent } from "../ai/scent";
 import { updateCatches } from "../systems/catches";
 import { bindEffects } from "../systems/effects";
 
 export interface GameSceneData {
   character: CharacterId;
   difficulty: DifficultyId;
+  /** Replay a particular level (solo); random otherwise. */
+  seed?: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -39,6 +52,10 @@ export class GameScene extends Phaser.Scene {
   private params!: GameSceneData;
   private controls!: InputSystem;
   private netsync: NetSync | null = null;
+  private shadows: Shadows | null = null;
+  private outlines: Outlines | null = null;
+  private footprints: Footprints | null = null;
+  private soundscape: Soundscape | null = null;
   private failed = false;
 
   constructor() { super("Game"); }
@@ -47,26 +64,38 @@ export class GameScene extends Phaser.Scene {
     this.params = data;
     this.world = null;
     this.netsync = null;
+    this.shadows = null;
+    this.outlines = null;
+    this.footprints = null;
+    this.soundscape = null;
     this.failed = false;
   }
 
   create(): void {
     const start = session.active ? session.start : null;
     const diff = DIFFICULTIES[start ? start.difficulty : this.params.difficulty];
-    const level = generateLevel(start ? start.seed : randomSeed(), diff.keyCount);
+    const seed = start ? start.seed : this.params.seed ?? randomSeed();
+    const level = generateLevel(seed, { keys: diff.keyCount, fuses: diff.fuseCount, items: diff.itemCount });
     const net: NetMode = !start ? "solo" : session.isHost ? "host" : "client";
     const w = new World(this, level, diff, net);
 
-    playMusic();
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     w.camera = new CameraRig(this.cameras.main);
 
-    new WorldView(w);
-    w.collision = new CollisionLayer(this, w.grid);
     w.lighting = new Lighting(w);
+    new WorldView(w);
+    const props = w.level.furniture.filter(f => f.solid).map(f => ({ tiles: furnitureTiles(f), foot: furnitureLayout(w, f).foot }));
+    w.collision = new CollisionLayer(this, w.grid, w.walls, w.level.rows, props);
+    w.gates = new Gates(w);
     w.hiding = new Hiding(w);
     w.doors = new Doors(w);
     w.objectives = new Objectives(w);
+    w.power = new Power(w);
+    w.items = new Items(w);
+    w.noise = new Noise(w);
+    w.scent = new Scent(w);
+    this.shadows = new Shadows(w);
+    this.footprints = new Footprints(w);
 
     if (start) {
       for (const [id, p] of Object.entries(start.players)) {
@@ -86,8 +115,11 @@ export class GameScene extends Phaser.Scene {
 
     w.round = new Round(w);
     w.director = new Director(w);
-    w.noise = new Noise(w);
+    w.vitals = new Vitals(w);
+    w.interact = new Interact(w);
+    this.outlines = new Outlines(w);
     w.vision = new Vision(w);
+    this.soundscape = new Soundscape(w);
     bindEffects(w);
     this.controls = new InputSystem(w);
     if (net !== "solo") this.netsync = new NetSync(w);
@@ -113,16 +145,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tick(w: World, time: number, dt: number): void {
+    w.lighting.update(dt);
     this.controls.update();
+    w.hiding.holding = this.controls.holdingBreath;
     if (w.isAuthority) for (const a of w.actors) if (a.brain && a.inPlay) a.brain.update(dt);
+    w.vitals.update(dt);
+    w.items.update(dt);
+    w.power.update(dt);
+    w.hiding.update(dt);
+    w.doors.update(dt);
     w.objectives.update(dt);
     updateCatches(w);
     w.director.update(dt);
     w.foxFlash.update(dt);
-    w.lighting.update(dt);
     w.noise.update(dt);
-    w.vision.update();
+    w.scent.update(dt);
+    w.vision.update(dt);
     w.camera.update(dt);
+    this.shadows?.update();
+    this.outlines?.update(dt);
+    this.footprints?.update(dt);
+    this.soundscape?.update(dt);
     this.netsync?.update(time);
   }
 
@@ -138,6 +181,7 @@ export class GameScene extends Phaser.Scene {
 
   private dispose(): void {
     this.netsync?.dispose();
+    this.soundscape?.dispose();
     this.world?.events.clear();
     this.scene.stop("Hud");
   }

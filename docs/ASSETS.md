@@ -4,8 +4,14 @@
 Промпт = **общий блок** своего раздела + **описание** из таблицы. Промпты на английском:
 модель так понимает их точнее.
 
-Готовые файлы клади в `public/assets/<папка>/<имя>.png` (или просто отдай мне). Дальше я сам
-обрежу, уменьшу, подгоню бесшовность, сделаю нормал-мапы и подключу через манифест.
+**Куда класть:** исходники (PNG любого размера) — в `art/<папка>/<имя>.png`, папки как в разделах
+ниже. Потом `npm run assets`: скрипт обрежет поля, уменьшит до нужного размера, сделает WebP в
+`public/assets/` и обновит манифест. Категорию он определяет по имени файла, так что файл в чужой
+папке тоже попадёт куда надо. Варианты складывай в `art/_variants/` — их скрипт пропускает.
+
+**Статус:** все 90 картинок P1–P3 получены и подключены. Новое для помещений — **раздел H**
+(двери, щиток, шкафчики сбоку, декор стен, новые типы комнат). Не хватает персонажей (раздел F).
+Звук: обе партии получены и подключены (раздел «Звук» в конце).
 
 **Приоритеты**
 - **P1** — нужно для этапа 2 (графика 2.5D), делать первым.
@@ -228,6 +234,27 @@
 
 По желанию (P3) добавь `<имя>_caught.png` — персонаж лежит на полу.
 
+### F2. Заражённые скины (P1, этап 6)
+
+Злодей теперь — заражённый персонаж, а не Лиса или Желочь. Нужен заражённый вариант каждого
+из пяти героев в той же позе, что сейчас (лицом к камере). Ракурсы из раздела F для
+заражённых — потом, тем же способом.
+
+**Куда класть:** `art/characters/`, 1024×1024, дальше `npm run assets`:
+`naumi_infected.png`, `kuruna_infected.png`, `wite_infected.png`, `sumrak_infected.png`,
+`yoko_infected.png`.
+
+**К запросу прикладывай две картинки:**
+1. текущий спрайт героя из `public/Sprite/` — это кого рисовать;
+2. `public/Sprite/Foxmind.png` — это как выглядит заражение.
+
+**Промпт:**
+> Chibi pixel-art game sprite. The first attached image is the exact character: keep the same hair, face shape, outfit, colors and proportions. The second attached image shows the style of the infection. Draw the INFECTED version of the first character: sickly pale gray-green skin with dark veins, eyes glowing red, dried blood around the mouth and on the clothes, torn and stained clothes, slightly hunched predatory pose with clawed fingers. Same chibi pixel-art style, same size and framing as the first image, facing toward the camera, standing, full body, clean dark outline. Flat lighting, no shadow on the ground. Single character, centered, transparent background, no text.
+
+Герой должен узнаваться с первого взгляда: причёска, цвета и одежда те же, меняются кожа,
+глаза, кровь и поза. Пока картинок нет, игра рисует заглушку: здоровый спрайт, перекрашенный
+в болезненный цвет.
+
 ---
 
 ## G. Интерфейс (P3)
@@ -242,6 +269,78 @@
 
 ---
 
+## H. Дозаказ для помещений (после этапа 3)
+
+Всё в стиле уже готовых картинок: **прикладывай указанный файл как референс стиля** (он лежит в
+`art/<папка>/`), общий блок — из раздела C. Пока картинки нет, в игре стоит заглушка или объект
+просто не рисуется; новая картинка встаёт на место без правки кода.
+
+**H1. Двери в проёмах (P1)** — папка `interactive/`, референс `art/interactive/door_metal_h.png`
+и `door_metal_v.png` (та же манера, но дерево, а не металл). Сейчас это рисованные кодом заглушки.
+
+| Файл | Клетки | Размер | `<OBJECT>` |
+|---|---|---|---|
+| `door_wood_h.png` | 1×⅞ | 1536×1344 | old wooden hospital door, closed, front view, small wired-glass window, chipped white-green paint, dented metal kick plate, squat proportions (wider than tall: walls in this view are low) |
+| `door_wood_h2.png` | 2×⅞ | 2048×896 | the same style, a double swing door (two leaves), closed, two round wired-glass windows, squat |
+| `door_wood_h_open.png` | ⅕×1 | 1024×1536 | the same door swung fully open, seen edge-on: a thin vertical door leaf standing against the frame |
+| `door_wood_v.png` | ⅕×1 | 1024×1536 | the same door closed in a vertical wall, seen edge-on from the side: a thin tall slab with a handle |
+| `door_wood_v_open.png` | 1×⅞ | 1536×1344 | the same door swung open 90° out of a wall running up–down: the leaf stands across the floor and we see its face, squat like `door_wood_h`, hinge on the left |
+
+**H2. Щиток и шкафчики (P1)** — папка `interactive/`.
+
+| Файл | Клетки | Размер | Референс | `<OBJECT>` |
+|---|---|---|---|---|
+| `fuse_box.png` | 1×1 | 1024² | `terminal.png` | wall-mounted electrical fuse box, lid open, three empty ceramic fuse slots, red warning pictogram (lightning bolt, no letters), indicator lamps off |
+| `fuse_box_on.png` | 1×1 | 1024² | `fuse_box.png` | the same fuse box with all fuses in place and small green indicator lamps glowing |
+| `locker_side_closed.png` | ⅔×1 | 1024×1536 | `locker_closed.png` | the same tall metal staff locker standing against a wall on its left, seen from the side at the 3/4 angle: narrow side panel and the edge of the doors |
+| `locker_side_open.png` | ⅔×1 | 1024×1536 | `locker_open.png` | the same side view with the door half open |
+
+**H3. Мебель боком (P2)** — для стен слева и справа (сейчас такие вещи стоят только у северной
+стены). Папка `props/`, референс — фронтальная версия того же предмета, «повернуть на 90°».
+
+| Файл | Клетки | Размер | `<OBJECT>` |
+|---|---|---|---|
+| `shelf_boxes_side.png` | 1×2 | 1024×1536 | the metal shelf with cardboard boxes from `shelf_boxes.png`, standing against a wall on its left, seen from the side |
+| `morgue_fridge_side.png` | 1×2 | 1024×1536 | the morgue refrigerator from `morgue_fridge.png`, against a wall on its left, doors facing right |
+| `medicine_cabinet_side.png` | 1×1 | 1024² | the medicine cabinet from `medicine_cabinet.png`, against a wall on its left |
+| `sink_side.png` | 1×1 | 1024² | the sink from `sink.png`, mounted on a wall on its left |
+| `radiator_side.png` | 1×1 | 1024² | the radiator from `radiator.png`, on a wall on its left |
+
+**H4. Декор стен (P2)** — вешается на переднюю грань северных стен, не мешает ходить. Папка
+`props/`, референс `art/surfaces/wall_face.png` (цвет стены) и `lamp_fluorescent.png` (масштаб).
+Размер 1024², прозрачный фон, фронтальный вид.
+
+| Файл | `<OBJECT>` |
+|---|---|
+| `decor_window_barred.png` | small barred window in a hospital wall, dirty glass, pitch-black night outside |
+| `decor_board.png` | notice board with pinned yellowed papers and a torn schedule |
+| `decor_clock.png` | round wall clock with a cracked glass, hands stopped |
+| `decor_pipes.png` | two rusty horizontal pipes with a valve wheel, seamless left–right |
+| `decor_extinguisher.png` | red fire extinguisher on a wall bracket |
+| `decor_marks.png` | scratch marks and a smeared bloody handprint on plaster (transparent around) |
+
+**H5. Новые типы комнат (P2)** — чтобы больница была необычнее. Пол — по правилам раздела A
+(референс `floor_ward.png`), мебель — раздел C (референс `bed_v_1.png`).
+
+| Файл | Папка | Клетки | `<OBJECT>` / описание |
+|---|---|---|---|
+| `floor_office.png` | surfaces | — | worn dark parquet floor with scratches and a faded carpet edge |
+| `desk.png` | props | 2×1 | doctor's wooden desk with papers, an old lamp and a rotary phone |
+| `filing_cabinet.png` | props | 1×1 | tall metal filing cabinet, one drawer pulled out, files spilling |
+| `bookshelf.png` | props | 2×1 | tall bookshelf with medical books and binders, against a wall |
+| `floor_hydro.png` | surfaces | — | small white ceramic floor tiles with rust-colored water stains and a drain grate |
+| `hydro_tub.png` | props | 1×2 | old hydrotherapy bathtub with a canvas cover and leather straps, psychiatric hospital |
+| `shower_stall.png` | props | 1×1 | tiled shower stall with a rusty shower head, against a wall |
+| `mattress_floor.png` | props | 1×2 | dirty thin mattress lying on the floor (flat) |
+
+**H6. Проломы (P3)** — папка `decals/`, строго сверху.
+
+| Файл | Описание |
+|---|---|
+| `breach_edge.png` | broken edge of a concrete wall seen from above: jagged chunks, exposed bricks and bent rebar, transparent around |
+
+---
+
 ## Что генерировать НЕ нужно (сделаю кодом)
 
 - Свет, тени, лучи фонарика, туман, свечение ламп и терминалов.
@@ -251,14 +350,24 @@
 
 ---
 
-## Звук (P2, отдельно — не gpt-image)
+## Звук (не gpt-image)
 
-Нужен другой инструмент: ElevenLabs Sound Effects или бесплатные CC0 с freesound.org.
-Формат `.ogg`, моно, 44,1 кГц. Папка `public/assets/sfx/`.
+**Инструмент:** ElevenLabs Sound Effects, как ты уже делал, или CC0 с freesound.org.
 
-- **Шаги:** `step_tile_walk_1..4`, `step_tile_run_1..4`.
-- **Укрытия и двери:** `locker_open`, `locker_close`, `door_unlock`, `door_creak`.
-- **Терминал и фонарик:** `terminal_beep`, `terminal_error`, `terminal_success`, `flashlight_click`.
-- **Состояния:** `key_pickup`, `heartbeat_loop`, `breath_heavy`, `caught_scream`.
-- **Монстры:** `fox_laugh`, `fox_growl`, `boss_roar`.
-- **Атмосфера:** `lamp_buzz_loop`, `ambient_drone_loop`, `distant_scream_1..3`.
+**Статус:** обе партии получены (82 файла) и подключены: 48 звуков, 142 варианта, ~1,9 МБ в игре.
+Всё из прошлого списка «не хватает» пришло.
+
+**Куда класть:** исходники лежат в `art/sound/` (из `public/sound/` я их перенёс, чтобы сырые
+файлы не уходили в игру). Новые можно грузить туда же или в любую папку — перенесу. Формат
+любой (`.mp3`, `.wav`), имя тоже любое — можно оставить то, что даёт генератор.
+
+**Как устроено:**
+- `npm run assets` сам режет файл на отдельные звуки: шаги, щелчки, удары сердца — даже если
+  в комнате с эхом тишины между ними нет;
+- убирает тишину по краям, выравнивает громкость, склеивает петли без шва (гул, фон, музыка);
+- что брать из какого файла, громкость, канал и дальность — одна строчка на звук в
+  `src/data/sounds.ts`.
+
+**Советы:**
+- лучше один файл с серией повторов (8 шагов, 3 скрипа) — будут разные варианты;
+- короткие эффекты — сухие, без длинного эха (эхо и глушение стенами делает игра).

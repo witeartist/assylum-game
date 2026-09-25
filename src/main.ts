@@ -2,6 +2,7 @@
 //  ASSYLUM — entry point
 // ============================================================
 import Phaser from "phaser";
+import { audio } from "./core/audio";
 import { CANVAS_W, CANVAS_H } from "./core/constants";
 import { RES } from "./render/display";
 import { BootScene } from "./scenes/BootScene";
@@ -20,6 +21,8 @@ const game = new Phaser.Game({
   width: CANVAS_W * RES,
   height: CANVAS_H * RES,
   backgroundColor: "#000000",
+  // Sound has its own engine (core/audio.ts).
+  audio: { noAudio: true },
   physics: {
     default: "arcade",
     arcade: { gravity: { x: 0, y: 0 }, debug: false },
@@ -33,4 +36,4 @@ const game = new Phaser.Game({
 });
 
 // Dev-only handle for debugging and automated browser checks (stripped from production builds).
-if (import.meta.env.DEV) (window as unknown as { __assylum: Phaser.Game }).__assylum = game;
+if (import.meta.env.DEV) Object.assign(window, { __assylum: game, __audio: audio });

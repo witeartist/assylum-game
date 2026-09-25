@@ -15,12 +15,14 @@ export interface QualityPreset {
   post: boolean;
   /** Dust motes floating around the player. */
   dust: number;
+  /** Shadows of furniture and characters: 0 only under them, 1 from flashlights, 2 from every strong light. */
+  objectShadows: 0 | 1 | 2;
 }
 
 export const QUALITY: Record<Quality, QualityPreset> = {
-  low:    { maxRes: 1,   lightScale: 0.35, softShadows: false, post: false, dust: 0 },
-  medium: { maxRes: 1.5, lightScale: 0.5,  softShadows: false, post: true,  dust: 40 },
-  high:   { maxRes: 2,   lightScale: 0.5,  softShadows: true,  post: true,  dust: 90 },
+  low:    { maxRes: 1,   lightScale: 0.35, softShadows: false, post: false, dust: 0,  objectShadows: 0 },
+  medium: { maxRes: 1.5, lightScale: 0.5,  softShadows: false, post: true,  dust: 40, objectShadows: 1 },
+  high:   { maxRes: 2,   lightScale: 0.5,  softShadows: true,  post: true,  dust: 90, objectShadows: 2 },
 };
 
 /** Current preset (follows the settings; the render scale below is fixed at startup). */
@@ -29,6 +31,7 @@ export const quality = {
   get softShadows() { return QUALITY[settings.quality].softShadows; },
   get post() { return QUALITY[settings.quality].post; },
   get dust() { return QUALITY[settings.quality].dust; },
+  get objectShadows() { return QUALITY[settings.quality].objectShadows; },
 };
 
 function computeRes(): number {

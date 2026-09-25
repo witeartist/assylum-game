@@ -2,6 +2,7 @@
 // and field of view. Level generation, AI, vision and lighting all use these functions.
 import { MAP_W, MAP_H, TILE } from "../core/constants";
 import type { Tile, Vec2 } from "../core/types";
+import { THIN, crossesThin } from "./walls";
 
 const N = MAP_W * MAP_H;
 
@@ -10,6 +11,8 @@ export class WalkGrid {
   readonly solid: Uint8Array;
   /** Bumped on every change, so caches (e.g. GPU copies) know when to refresh. */
   version = 0;
+  /** What a solid tile covers (walls.ts shape codes): null or 0 = the whole tile. Sight uses it. */
+  shape: Uint8Array | null = null;
 
   constructor(solid?: Uint8Array) {
     this.solid = solid ?? new Uint8Array(N).fill(1);
@@ -92,12 +95,82 @@ export function findPath(grid: WalkGrid, start: Tile, goal: Tile): Tile[] {
 }
 
 /**
- * Whether the straight segment a→b (world px) crosses no solid tile. Walks every tile the
- * segment touches (grid DDA); the tiles holding the two end points are not tested.
+ * Cheapest 4-way path where stepping onto tile i costs 1 + extra[i] (e.g. danger near a monster);
+ * same result format as findPath. Dijkstra over a binary heap.
+ */
+export function findPathWeighted(grid: WalkGrid, start: Tile, goal: Tile, extra: Float32Array): Tile[] {
+  const s = start.row * MAP_W + start.col, g = goal.row * MAP_W + goal.col;
+  if (s === g || grid.solid[g]) return [];
+  const cost = new Float32Array(N).fill(Infinity);
+  const parent = new Int32Array(N).fill(-1);
+  const heap: number[] = [];
+  const hc: number[] = [];
+  const push = (i: number, c: number) => {
+    heap.push(i); hc.push(c);
+    let k = heap.length - 1;
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (hc[p] <= hc[k]) break;
+      [heap[p], heap[k]] = [heap[k], heap[p]]; [hc[p], hc[k]] = [hc[k], hc[p]];
+      k = p;
+    }
+  };
+  const pop = (): number => {
+    const top = heap[0];
+    const li = heap.pop()!, lc = hc.pop()!;
+    if (heap.length > 0) {
+      heap[0] = li; hc[0] = lc;
+      let k = 0;
+      for (;;) {
+        const l = k * 2 + 1, r = l + 1;
+        let m = k;
+        if (l < heap.length && hc[l] < hc[m]) m = l;
+        if (r < heap.length && hc[r] < hc[m]) m = r;
+        if (m === k) break;
+        [heap[m], heap[k]] = [heap[k], heap[m]]; [hc[m], hc[k]] = [hc[k], hc[m]];
+        k = m;
+      }
+    }
+    return top;
+  };
+  cost[s] = 0;
+  parent[s] = s;
+  push(s, 0);
+  const solid = grid.solid;
+  while (heap.length) {
+    const cur = pop();
+    if (cur === g) break;
+    const c = cur % MAP_W;
+    const base = cost[cur];
+    for (const n of [c < MAP_W - 1 ? cur + 1 : -1, c > 0 ? cur - 1 : -1, cur + MAP_W < N ? cur + MAP_W : -1, cur - MAP_W]) {
+      if (n < 0 || solid[n]) continue;
+      const nc = base + 1 + extra[n];
+      if (nc < cost[n]) { cost[n] = nc; parent[n] = cur; push(n, nc); }
+    }
+  }
+  if (parent[g] < 0) return [];
+  const path: Tile[] = [];
+  for (let cur = g; cur !== s; cur = parent[cur]) path.push({ col: cur % MAP_W, row: Math.floor(cur / MAP_W) });
+  return path.reverse();
+}
+
+/**
+ * Whether the straight segment a→b (world px) crosses no wall. Walks every tile the segment
+ * touches (grid DDA). A whole solid tile blocks; a thin wall blocks only if the segment crosses its
+ * band. The tiles holding the two end points count only with thin walls (a point beside a
+ * partition, in its tile, still can't see through it).
  */
 export function hasLineOfSight(grid: WalkGrid, a: Vec2, b: Vec2): boolean {
   let col = Math.floor(a.x / TILE), row = Math.floor(a.y / TILE);
   const endCol = Math.floor(b.x / TILE), endRow = Math.floor(b.y / TILE);
+  const shape = grid.shape;
+  /** Shape of solid tile (c, r): 0 = whole. */
+  const shapeAt = (c: number, r: number) => shape && c >= 0 && r >= 0 && c < MAP_W && r < MAP_H ? shape[r * MAP_W + c] : 0;
+  const thinBlocks = (c: number, r: number) => {
+    const code = grid.isSolid(c, r) ? shapeAt(c, r) : 0;
+    return code >= THIN && crossesThin(code, c, r, a, b);
+  };
+  if (shape && (thinBlocks(col, row) || ((col !== endCol || row !== endRow) && thinBlocks(endCol, endRow)))) return false;
   const dx = b.x - a.x, dy = b.y - a.y;
   const stepC = dx > 0 ? 1 : -1, stepR = dy > 0 ? 1 : -1;
   const tDeltaX = dx !== 0 ? Math.abs(TILE / dx) : Infinity;
@@ -109,7 +182,9 @@ export function hasLineOfSight(grid: WalkGrid, a: Vec2, b: Vec2): boolean {
     if (tMaxX < tMaxY) { col += stepC; tMaxX += tDeltaX; }
     else { row += stepR; tMaxY += tDeltaY; }
     if (col === endCol && row === endRow) break;
-    if (grid.isSolid(col, row)) return false;
+    if (!grid.isSolid(col, row)) continue;
+    const code = shapeAt(col, row);
+    if (code < THIN || crossesThin(code, col, row, a, b)) return false;
   }
   return true;
 }

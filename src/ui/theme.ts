@@ -92,6 +92,20 @@ export function textStyle(kind: TextKind, ink: string = INK.text): Phaser.Types.
 }
 
 /**
+ * Outline of things you can pick up or use (render/outlines.ts): pickups glow faintly and pulse,
+ * the thing E works on right now is bright. Lit like the world, so darkness still hides them.
+ */
+export const OUTLINE = {
+  color: 0xfff0c8,
+  /** Alpha of a pickup's outline (it pulses around this). */
+  pickup: 0.7,
+  /** Alpha of the outline of what E works on. */
+  focus: 1,
+  /** Thickness, screen px. */
+  width: 2,
+} as const;
+
+/**
  * Draw order inside the world camera. Standing objects (characters, furniture, pickups) are
  * sorted by the y of their base, i.e. depths 0..WORLD_H, between the floor and the wall tops.
  */
@@ -101,9 +115,6 @@ export const DEPTH = {
   floorObjects: -2500,
   shadows: -2000,
   dust: 3500,
-  /** Wall tops cover whatever stands behind (north of) a wall. */
-  caps: 4000,
-  ceiling: 4500,
 } as const;
 
 /** Draw order inside the HUD scene. */

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { audio } from "../core/audio";
 import { CANVAS_W } from "../core/constants";
 import { CHARACTERS, HUNTER_ID, RUNNER_IDS } from "../data/characters";
 import { backdrop, button, label, panel, portrait, reveal, scrim, uiCamera } from "../ui/components";
@@ -9,6 +10,7 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     uiCamera(this);
+    audio.playMusic("menuMusic");
     const CX = CANVAS_W / 2;
     backdrop(this, "ui/menu_art");
     scrim(this, 0.72);

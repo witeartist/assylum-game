@@ -4,20 +4,14 @@ import Phaser from "phaser";
 import { TILE } from "../core/constants";
 import type { RunnerStatus, Role, Tile, Vec2 } from "../core/types";
 import type { CharacterDef } from "../data/characters";
-import { DEFAULT_FLASHLIGHT_MODE } from "../data/balance";
+import { BATTERY, DEFAULT_FLASHLIGHT_MODE, EXHAUSTED_MULT, SNEAK_MULT, STAMINA } from "../data/balance";
 import { DEPTH } from "../ui/theme";
+import { GAITS, NET_FLAG, type Gait, type NetState } from "./state";
+
+export type { Gait, NetState } from "./state";
 
 /** Who drives the actor: this peer's input, a bot/AI brain here, or another peer. */
 export type Control = "local" | "bot" | "ai" | "remote";
-
-/** Network state of an actor (positions in world px, velocities in px/s). */
-export interface NetState {
-  x: number; y: number; vx: number; vy: number;
-  /** Facing angle, radians. */
-  a: number;
-  /** Flashlight: 0 = off, otherwise the mode (1..3). */
-  fl: number;
-}
 
 export interface Brain {
   readonly state: string;
@@ -29,15 +23,18 @@ export interface ActorOptions {
   def: CharacterDef;
   control: Control;
   pos: Vec2;
-  speed: number;
+  /** Walking and running speed, px/s. */
+  walk: number;
+  run: number;
 }
 
-const REMOTE_ALPHA = 0.8;
 const REMOTE_LERP = 0.3;
 const WAYPOINT_REACHED = 4;
 const STUCK_TIME = 0.2;
 const BOB_HEIGHT = 2.2;
 const BOB_TILT = 0.05;
+/** How fast the picture catches up after a step (stepTo), per second. */
+const SLIDE_RATE = 14;
 
 /**
  * The Actor itself is an invisible physics body centred on its position; what you see is
@@ -52,12 +49,34 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   readonly shadow: Phaser.GameObjects.Image;
   status: RunnerStatus = "alive";
   hiding = false;
-  speed: number;
+  walkSpeed: number;
+  runSpeed: number;
+  /** Temporary multiplier on every gait (the hunter speeds up when the boss wakes). */
+  speedMul = 1;
+  gait: Gait = "walk";
+  /** Stamina in seconds of running; see STAMINA. */
+  stamina: number;
+  readonly staminaMax: number;
+  /** Out of breath: no running until stamina recovers. */
+  exhausted = false;
+  /** Seconds left of adrenaline (running costs nothing). */
+  adrenaline = 0;
   /** Direction the actor looks, radians (0 = right, π/2 = down). */
   facing = Math.PI / 2;
-  readonly flashlight = { on: false, mode: DEFAULT_FLASHLIGHT_MODE };
+  /** Flashlight; `charge` 0..1 drains while it is on. */
+  readonly flashlight = { on: false, mode: DEFAULT_FLASHLIGHT_MODE, charge: BATTERY.start };
+  /** Grabs this runner can still break free from (ability + sedatives). */
+  breakFree = 0;
+  /** Seconds the actor is stunned (a runner broke free from it). */
+  stunned = 0;
+  /** Remote actors: flags from the network (NET_FLAG). */
+  netFlags = 0;
   /** Whether the local viewer can see this actor (set by the vision system). */
   seen = true;
+  /** Drawn opacity, eased towards `seen`. */
+  fade = 1;
+  /** Where the picture still is relative to the body after a step (stepTo), px; shrinks to 0. */
+  private slide = { x: 0, y: 0 };
   brain: Brain | null = null;
   path: Tile[] = [];
   pathTimer = 0;
@@ -75,7 +94,11 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     this.id = o.id;
     this.def = o.def;
     this.control = o.control;
-    this.speed = o.speed;
+    this.walkSpeed = o.walk;
+    this.runSpeed = o.run;
+    this.staminaMax = STAMINA.max * (o.def.ability?.stamina ?? 1);
+    this.stamina = this.staminaMax;
+    this.breakFree = o.def.ability?.breakFree ?? 0;
     this.prevX = o.pos.x;
     this.prevY = o.pos.y;
     scene.add.existing(this);
@@ -86,8 +109,7 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     this.shadow = scene.add.image(o.pos.x, o.pos.y, "fx/shadow").setDepth(DEPTH.shadows).setAlpha(0.8);
     this.shadow.setDisplaySize(o.def.body * 1.6, o.def.body * 0.7);
     if (o.control === "remote") {
-      this.view.setAlpha(REMOTE_ALPHA);
-      this.net = { x: o.pos.x, y: o.pos.y, vx: 0, vy: 0, a: this.facing, fl: 0 };
+      this.net = { x: o.pos.x, y: o.pos.y, vx: 0, vy: 0, a: this.facing, fl: 0, g: 1, k: 0 };
       this.netTarget = { x: o.pos.x, y: o.pos.y };
     } else {
       scene.physics.add.existing(this);
@@ -115,13 +137,23 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     return b ? { x: b.velocity.x, y: b.velocity.y } : { x: 0, y: 0 };
   }
 
-  /** Walk in direction (dx, dy) — any length — at `speed` px/s. */
-  move(dx: number, dy: number, speed: number): void {
+  /** Speed of a gait right now, px/s (exhaustion and boosts included). */
+  gaitSpeed(g: Gait = this.gait): number {
+    const walk = this.walkSpeed * (this.exhausted ? EXHAUSTED_MULT : 1);
+    const v = g === "sneak" ? this.walkSpeed * SNEAK_MULT : g === "run" && !this.exhausted ? this.runSpeed : walk;
+    return this.stunned > 0 ? 0 : v * this.speedMul;
+  }
+
+  /** Can start or keep running. */
+  get canRun(): boolean { return !this.exhausted && (this.stamina > 0 || this.adrenaline > 0); }
+
+  /** Walk in direction (dx, dy) — any length — at `speed` px/s. `face` turns the actor that way. */
+  move(dx: number, dy: number, speed: number, face = true): void {
     const len = Math.hypot(dx, dy);
     const b = this.arcadeBody;
     if (!b || len === 0) { this.halt(); return; }
     b.setVelocity(dx / len * speed, dy / len * speed);
-    this.facing = Math.atan2(dy, dx);
+    if (face) this.facing = Math.atan2(dy, dx);
   }
 
   halt(): void { this.arcadeBody?.setVelocity(0, 0); }
@@ -130,6 +162,14 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     const b = this.arcadeBody;
     if (b) b.reset(p.x, p.y); else this.setPosition(p.x, p.y);
     if (this.net) { this.net.x = p.x; this.net.y = p.y; this.netTarget = { ...p }; }
+  }
+
+  /** Jump to `p` at once, while the picture glides there over a moment (stepping out of a doorway). */
+  stepTo(p: Vec2): void {
+    this.slide.x += this.x - p.x;
+    this.slide.y += this.y - p.y;
+    this.halt();
+    this.teleport(p);
   }
 
   /** Walk along `path`, skipping reached waypoints; gives up on a waypoint it is stuck on. */
@@ -166,7 +206,7 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
       return;
     }
     b.setVelocity(dx / len * speed, dy / len * speed);
-    this.facing = Math.atan2(dy, dx);
+    this.facing = turnTowards(this.facing, Math.atan2(dy, dx), dt * 10);
   }
 
   setHiding(on: boolean, spot?: Vec2): void {
@@ -190,25 +230,53 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   }
 
   refreshVisibility(): void {
-    const visible = this.inPlay && !this.hiding && this.seen;
+    const visible = this.inPlay && !this.hiding && this.fade > 0.02;
     this.view.setVisible(visible);
     this.shadow.setVisible(visible);
+    if (visible) {
+      this.view.setAlpha(this.fade);
+      this.shadow.setAlpha(0.8 * this.fade);
+    }
+  }
+
+  /** Ease the drawn opacity towards whether the viewer sees us. */
+  updateFade(dt: number): void {
+    const target = this.seen ? 1 : 0;
+    this.fade += (target - this.fade) * Math.min(1, dt * (this.seen ? 12 : 6));
+    if (Math.abs(this.fade - target) < 0.02) this.fade = target;
+    this.refreshVisibility();
   }
 
   /** Remote actors: take a network update. */
   applyNet(s: NetState): void {
     if (!this.net) return;
-    this.net = { x: s.x, y: s.y, vx: s.vx, vy: s.vy, a: s.a, fl: s.fl };
+    this.net = { x: s.x, y: s.y, vx: s.vx, vy: s.vy, a: s.a, fl: s.fl, g: s.g, k: s.k };
     this.netTarget = { x: s.x, y: s.y };
     this.facing = s.a;
     this.flashlight.on = s.fl > 0;
     if (s.fl > 0) this.flashlight.mode = s.fl;
+    this.gait = GAITS[s.g] ?? "walk";
+    this.netFlags = s.k;
+    this.exhausted = (s.k & NET_FLAG.exhausted) !== 0;
   }
 
-  toNet(): NetState {
+  /** NET_FLAG bits describing this actor; `extra` adds bits known to other systems. */
+  flags(extra = 0): number {
+    if (this.net) return this.netFlags;
+    let k = extra;
+    if (this.exhausted) k |= NET_FLAG.exhausted;
+    if (this.breakFree > 0) k |= NET_FLAG.canBreakFree;
+    if (this.flashlight.charge < BATTERY.low) k |= NET_FLAG.batteryLow;
+    return k;
+  }
+
+  toNet(extraFlags = 0): NetState {
     const v = this.velocity;
     const p = this.authPos;
-    return { x: p.x, y: p.y, vx: v.x, vy: v.y, a: this.facing, fl: this.flashlight.on ? this.flashlight.mode : 0 };
+    return {
+      x: p.x, y: p.y, vx: v.x, vy: v.y, a: this.facing, fl: this.flashlight.on ? this.flashlight.mode : 0,
+      g: GAITS.indexOf(this.gait), k: this.flags(extraFlags),
+    };
   }
 
   protected override preUpdate(time: number, delta: number): void {
@@ -231,12 +299,18 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     if (speed > 20) this.bobT += dt * speed / 38;
     else this.bobT = 0;
     const phase = Math.sin(this.bobT * Math.PI);
-    if (v.x < -5) this.view.setFlipX(true);
-    else if (v.x > 5) this.view.setFlipX(false);
-    this.view.setPosition(this.x, this.feetY - Math.abs(phase) * BOB_HEIGHT)
+    // Look where we face (the flashlight direction), keeping the last side when facing up/down.
+    const cx = Math.cos(this.facing);
+    if (cx < -0.25) this.view.setFlipX(true);
+    else if (cx > 0.25) this.view.setFlipX(false);
+    const k = Math.min(1, dt * SLIDE_RATE);
+    this.slide.x -= this.slide.x * k;
+    this.slide.y -= this.slide.y * k;
+    const x = this.x + this.slide.x, feet = this.feetY + this.slide.y;
+    this.view.setPosition(x, feet - Math.abs(phase) * BOB_HEIGHT)
       .setRotation(speed > 20 ? phase * BOB_TILT : 0)
-      .setDepth(this.feetY);
-    this.shadow.setPosition(this.x, this.feetY - 1);
+      .setDepth(feet);
+    this.shadow.setPosition(x, feet - 1);
   }
 
   override destroy(fromScene?: boolean): void {
@@ -244,4 +318,12 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     this.shadow.destroy();
     super.destroy(fromScene);
   }
+}
+
+/** Rotate angle `from` towards `to` by at most `step` radians. */
+export function turnTowards(from: number, to: number, step: number): number {
+  let d = to - from;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return Math.abs(d) <= step ? to : from + Math.sign(d) * step;
 }

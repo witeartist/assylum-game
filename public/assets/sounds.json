@@ -1,0 +1,536 @@
+{
+ "stepWalk": [
+  {
+   "url": "assets/sound/stepWalk_0.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_1.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_2.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_3.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_4.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_5.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_6.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_7.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_8.mp3"
+  },
+  {
+   "url": "assets/sound/stepWalk_9.mp3"
+  }
+ ],
+ "stepRun": [
+  {
+   "url": "assets/sound/stepRun_0.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_1.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_2.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_3.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_4.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_5.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_6.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_7.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_8.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_9.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_10.mp3"
+  },
+  {
+   "url": "assets/sound/stepRun_11.mp3"
+  }
+ ],
+ "stepMonster": [
+  {
+   "url": "assets/sound/stepMonster_0.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_1.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_2.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_3.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_4.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_5.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_6.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_7.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_8.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_9.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_10.mp3"
+  },
+  {
+   "url": "assets/sound/stepMonster_11.mp3"
+  }
+ ],
+ "stepClaws": [
+  {
+   "url": "assets/sound/stepClaws_0.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_1.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_2.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_3.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_4.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_5.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_6.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_7.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_8.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_9.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_10.mp3"
+  },
+  {
+   "url": "assets/sound/stepClaws_11.mp3"
+  }
+ ],
+ "doorOpen": [
+  {
+   "url": "assets/sound/doorOpen_0.mp3"
+  },
+  {
+   "url": "assets/sound/doorOpen_1.mp3"
+  },
+  {
+   "url": "assets/sound/doorOpen_2.mp3"
+  },
+  {
+   "url": "assets/sound/doorOpen_3.mp3"
+  },
+  {
+   "url": "assets/sound/doorOpen_4.mp3"
+  }
+ ],
+ "doorSlam": [
+  {
+   "url": "assets/sound/doorSlam_0.mp3"
+  },
+  {
+   "url": "assets/sound/doorSlam_1.mp3"
+  }
+ ],
+ "doorSmash": [
+  {
+   "url": "assets/sound/doorSmash_0.mp3"
+  },
+  {
+   "url": "assets/sound/doorSmash_1.mp3"
+  }
+ ],
+ "unlock": [
+  {
+   "url": "assets/sound/unlock_0.mp3"
+  }
+ ],
+ "exitOpen": [
+  {
+   "url": "assets/sound/exitOpen_0.mp3"
+  },
+  {
+   "url": "assets/sound/exitOpen_1.mp3"
+  }
+ ],
+ "lockerOpen": [
+  {
+   "url": "assets/sound/lockerOpen_0.mp3"
+  },
+  {
+   "url": "assets/sound/lockerOpen_1.mp3"
+  },
+  {
+   "url": "assets/sound/lockerOpen_2.mp3"
+  },
+  {
+   "url": "assets/sound/lockerOpen_3.mp3"
+  }
+ ],
+ "lockerClose": [
+  {
+   "url": "assets/sound/lockerClose_0.mp3"
+  }
+ ],
+ "bedHide": [
+  {
+   "url": "assets/sound/bedHide_0.mp3"
+  },
+  {
+   "url": "assets/sound/bedHide_1.mp3"
+  },
+  {
+   "url": "assets/sound/bedHide_2.mp3"
+  },
+  {
+   "url": "assets/sound/bedHide_3.mp3"
+  }
+ ],
+ "terminalBeep": [
+  {
+   "url": "assets/sound/terminalBeep_0.mp3"
+  },
+  {
+   "url": "assets/sound/terminalBeep_1.mp3"
+  },
+  {
+   "url": "assets/sound/terminalBeep_2.mp3"
+  }
+ ],
+ "terminalError": [
+  {
+   "url": "assets/sound/terminalError_0.mp3"
+  }
+ ],
+ "terminalOk": [
+  {
+   "url": "assets/sound/terminalOk_0.mp3"
+  }
+ ],
+ "fuseInsert": [
+  {
+   "url": "assets/sound/fuseInsert_0.mp3"
+  },
+  {
+   "url": "assets/sound/fuseInsert_1.mp3"
+  }
+ ],
+ "powerOn": [
+  {
+   "url": "assets/sound/powerOn_0.mp3"
+  },
+  {
+   "url": "assets/sound/powerOn_1.mp3"
+  }
+ ],
+ "flashlight": [
+  {
+   "url": "assets/sound/flashlight_0.mp3"
+  },
+  {
+   "url": "assets/sound/flashlight_1.mp3"
+  },
+  {
+   "url": "assets/sound/flashlight_2.mp3"
+  }
+ ],
+ "battery": [
+  {
+   "url": "assets/sound/battery_0.mp3"
+  },
+  {
+   "url": "assets/sound/battery_1.mp3"
+  }
+ ],
+ "keyPickup": [
+  {
+   "url": "assets/sound/keyPickup_0.mp3"
+  }
+ ],
+ "pickup": [
+  {
+   "url": "assets/sound/pickup_0.mp3"
+  },
+  {
+   "url": "assets/sound/pickup_1.mp3"
+  }
+ ],
+ "note": [
+  {
+   "url": "assets/sound/note_0.mp3"
+  },
+  {
+   "url": "assets/sound/note_1.mp3"
+  }
+ ],
+ "injection": [
+  {
+   "url": "assets/sound/injection_0.mp3"
+  },
+  {
+   "url": "assets/sound/injection_1.mp3"
+  }
+ ],
+ "glowstick": [
+  {
+   "url": "assets/sound/glowstick_0.mp3"
+  },
+  {
+   "url": "assets/sound/glowstick_1.mp3"
+  }
+ ],
+ "bottleBreak": [
+  {
+   "url": "assets/sound/bottleBreak_0.mp3"
+  }
+ ],
+ "whistle": [
+  {
+   "url": "assets/sound/whistle_0.mp3"
+  },
+  {
+   "url": "assets/sound/whistle_1.mp3"
+  }
+ ],
+ "pant": [
+  {
+   "url": "assets/sound/pant_0.mp3"
+  },
+  {
+   "url": "assets/sound/pant_1.mp3"
+  }
+ ],
+ "gasp": [
+  {
+   "url": "assets/sound/gasp_0.mp3"
+  },
+  {
+   "url": "assets/sound/gasp_1.mp3"
+  },
+  {
+   "url": "assets/sound/gasp_2.mp3"
+  },
+  {
+   "url": "assets/sound/gasp_3.mp3"
+  }
+ ],
+ "heartbeat": [
+  {
+   "url": "assets/sound/heartbeat_0.mp3"
+  },
+  {
+   "url": "assets/sound/heartbeat_1.mp3"
+  },
+  {
+   "url": "assets/sound/heartbeat_2.mp3"
+  },
+  {
+   "url": "assets/sound/heartbeat_3.mp3"
+  },
+  {
+   "url": "assets/sound/heartbeat_4.mp3"
+  },
+  {
+   "url": "assets/sound/heartbeat_5.mp3"
+  }
+ ],
+ "scream": [
+  {
+   "url": "assets/sound/scream_0.mp3"
+  }
+ ],
+ "grab": [
+  {
+   "url": "assets/sound/grab_0.mp3"
+  },
+  {
+   "url": "assets/sound/grab_1.mp3"
+  }
+ ],
+ "breakFree": [
+  {
+   "url": "assets/sound/breakFree_0.mp3"
+  },
+  {
+   "url": "assets/sound/breakFree_1.mp3"
+  }
+ ],
+ "foxLaugh": [
+  {
+   "url": "assets/sound/foxLaugh_0.mp3"
+  },
+  {
+   "url": "assets/sound/foxLaugh_1.mp3"
+  },
+  {
+   "url": "assets/sound/foxLaugh_2.mp3"
+  },
+  {
+   "url": "assets/sound/foxLaugh_3.mp3"
+  },
+  {
+   "url": "assets/sound/foxLaugh_4.mp3"
+  },
+  {
+   "url": "assets/sound/foxLaugh_5.mp3"
+  }
+ ],
+ "foxGrowl": [
+  {
+   "url": "assets/sound/foxGrowl_0.mp3"
+  },
+  {
+   "url": "assets/sound/foxGrowl_1.mp3"
+  },
+  {
+   "url": "assets/sound/foxGrowl_2.mp3"
+  },
+  {
+   "url": "assets/sound/foxGrowl_3.mp3"
+  }
+ ],
+ "foxFlash": [
+  {
+   "url": "assets/sound/foxFlash_0.mp3"
+  }
+ ],
+ "roar": [
+  {
+   "url": "assets/sound/roar_0.mp3"
+  }
+ ],
+ "stinger": [
+  {
+   "url": "assets/sound/stinger_0.mp3"
+  },
+  {
+   "url": "assets/sound/stinger_1.mp3"
+  }
+ ],
+ "lampHum": [
+  {
+   "url": "assets/sound/lampHum_0.mp3",
+   "loop": [
+    0.25,
+    2.55
+   ]
+  }
+ ],
+ "lampDie": [
+  {
+   "url": "assets/sound/lampDie_0.mp3"
+  },
+  {
+   "url": "assets/sound/lampDie_1.mp3"
+  }
+ ],
+ "drone": [
+  {
+   "url": "assets/sound/drone_0.mp3",
+   "loop": [
+    0.25,
+    5.05
+   ]
+  }
+ ],
+ "distantBang": [
+  {
+   "url": "assets/sound/distantBang_0.mp3"
+  },
+  {
+   "url": "assets/sound/distantBang_1.mp3"
+  }
+ ],
+ "distantScream": [
+  {
+   "url": "assets/sound/distantScream_0.mp3"
+  },
+  {
+   "url": "assets/sound/distantScream_1.mp3"
+  }
+ ],
+ "distantGroan": [
+  {
+   "url": "assets/sound/distantGroan_0.mp3"
+  }
+ ],
+ "drip": [
+  {
+   "url": "assets/sound/drip_0.mp3"
+  },
+  {
+   "url": "assets/sound/drip_1.mp3"
+  }
+ ],
+ "menuMusic": [
+  {
+   "url": "assets/sound/menuMusic_0.mp3",
+   "loop": [
+    0.25,
+    16.98
+   ]
+  }
+ ],
+ "stingWin": [
+  {
+   "url": "assets/sound/stingWin_0.mp3"
+  },
+  {
+   "url": "assets/sound/stingWin_1.mp3"
+  }
+ ],
+ "stingLose": [
+  {
+   "url": "assets/sound/stingLose_0.mp3"
+  }
+ ],
+ "uiClick": [
+  {
+   "url": "assets/sound/uiClick_0.mp3"
+  },
+  {
+   "url": "assets/sound/uiClick_1.mp3"
+  },
+  {
+   "url": "assets/sound/uiClick_2.mp3"
+  }
+ ]
+}

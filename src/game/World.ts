@@ -8,7 +8,8 @@ import type { RunnerStatus, Vec2 } from "../core/types";
 import type { Difficulty } from "../data/difficulty";
 import type { Tone } from "../ui/theme";
 import { WalkGrid } from "../world/grid";
-import { buildRoomLookup, type LevelData, type Room } from "../world/level";
+import { blockingFurnitureTiles, buildRoomLookup, type LevelData, type Room } from "../world/level";
+import { levelWallShapes } from "../world/walls";
 import type { Actor } from "../entities/Actor";
 import type { CollisionLayer } from "../world/collision";
 import type { Objectives } from "../systems/objectives";
@@ -16,11 +17,18 @@ import type { Doors } from "../systems/doors";
 import type { Hiding } from "../systems/hiding";
 import type { Lighting } from "../systems/lighting";
 import type { FoxFlash } from "../systems/foxFlash";
-import type { Vision } from "../systems/vision";
-import type { Noise } from "../systems/noise";
+import type { StandingProp, Vision } from "../systems/vision";
+import type { Noise, NoiseKind } from "../systems/noise";
 import type { Director } from "../systems/director";
 import type { Round } from "../systems/round";
+import type { Vitals } from "../systems/vitals";
+import type { Items } from "../systems/items";
+import type { Power } from "../systems/power";
+import type { Interact } from "../systems/interact";
+import type { Gates } from "../systems/gates";
+import type { Scent } from "../ai/scent";
 import type { CameraRig } from "../render/cameraRig";
+import type { ItemKind } from "../data/items";
 
 /** solo = everything local; host = authoritative peer; client = follows the host. */
 export type NetMode = "solo" | "host" | "client";
@@ -33,6 +41,22 @@ export interface GameEvents {
   runnerEscaped: { actor: Actor; remote: boolean };
   runnerLeft: { actor: Actor };
   hidingChanged: { actor: Actor; remote: boolean };
+  /** A monster opened a hiding spot; `checkRequested`: a hunter player on a client asks the host to. */
+  spotChecked: { index: number; by: string };
+  checkRequested: { index: number };
+  brokeFree: { actor: Actor; by: string; remote: boolean };
+  itemPicked: { index: number; by: string; remote: boolean };
+  /** An item used up on the spot (a battery, a syringe). */
+  itemUsed: { kind: ItemKind; by: string };
+  /** A bottle or glowstick thrown from (x, y) to (tx, ty), or Yoko's whistle. */
+  itemThrown: { kind: ItemKind | "whistle"; by: string; x: number; y: number; tx: number; ty: number; remote: boolean };
+  fusePicked: { index: number; by: string; remote: boolean };
+  fuseInserted: { index: number; by: string; remote: boolean };
+  fuseDropped: { index: number; x: number; y: number; remote: boolean };
+  powerRestored: Record<string, never>;
+  gateChanged: { index: number; open: boolean; by: string; remote: boolean };
+  /** A noise other peers can't work out themselves (radius in tiles). */
+  noiseMade: { x: number; y: number; radius: number; kind: NoiseKind; by: string };
   bossSpawned: { remote: boolean };
   /** Host: the round is over; final status of every runner. */
   roundResults: { results: Record<string, RunnerStatus> };
@@ -44,9 +68,20 @@ export interface GameEvents {
 
 export class World {
   readonly events = new EventBus<GameEvents>();
+  /** Where actors can walk: walls, closed doors and solid furniture block. */
   readonly grid: WalkGrid;
+  /** What blocks sight and light: walls and closed doors (you can see over a bed). */
+  readonly sight: WalkGrid;
+  /** Solid tiles drawn as doors (locked doors, the exit): lit like a wall front, not a wall top. */
+  readonly doorish = new Set<number>();
+  /** What each wall or door covers: whole tiles or thin partitions (see walls.ts). */
+  readonly walls: Uint8Array;
   readonly rng: Rng;
   readonly actors: Actor[] = [];
+  /** Standing objects (furniture, lockers, beds, wall fixtures): drawn only while in sight. */
+  readonly props: StandingProp[] = [];
+  /** Which bot is going for which goal ("key:2" → bot), so they split the work. */
+  readonly claims = new Map<string, Actor>();
   private readonly roomLookup: Int16Array;
 
   local!: Actor;
@@ -61,6 +96,12 @@ export class World {
   noise!: Noise;
   director!: Director;
   round!: Round;
+  vitals!: Vitals;
+  items!: Items;
+  power!: Power;
+  interact!: Interact;
+  gates!: Gates;
+  scent!: Scent;
 
   constructor(
     readonly scene: Phaser.Scene,
@@ -68,8 +109,13 @@ export class World {
     readonly diff: Difficulty,
     readonly net: NetMode,
   ) {
-    this.grid = WalkGrid.fromRows(level.rows);
-    for (const d of level.lockedDoors) for (const t of d.doorTiles) this.grid.setSolid(t, true);
+    this.walls = levelWallShapes(level);
+    this.sight = WalkGrid.fromRows(level.rows).withSolid(level.lockedDoors.flatMap(d => d.doorTiles));
+    this.sight.shape = this.walls;
+    this.grid = this.sight.withSolid(blockingFurnitureTiles(level));
+    for (const d of level.lockedDoors) for (const t of d.doorTiles) this.doorish.add(tileIndex(t.col, t.row));
+    const e = level.exitTile;
+    for (const c of [e.col, e.col + 1]) this.doorish.add(tileIndex(c, e.row - 1));
     this.roomLookup = buildRoomLookup(level.rooms);
     this.rng = new Rng(level.seed ^ 0x5bd1e995);
   }
@@ -79,6 +125,11 @@ export class World {
   get multiplayer(): boolean { return this.net !== "solo"; }
 
   addActor(a: Actor): Actor { this.actors.push(a); return a; }
+  /**
+   * `at`: points on the floor it stands on; it shows while the viewer sees any of them.
+   * `casts`: it stands up from the floor and throws a shadow (render/shadows.ts).
+   */
+  addProp(sprite: Phaser.GameObjects.Image, at: Vec2[], casts = false): void { this.props.push({ sprite, at, fade: 1, casts }); }
   byId(id: string): Actor | undefined { return this.actors.find(a => a.id === id); }
 
   runners(): Actor[] { return this.actors.filter(a => a.role === "runner"); }

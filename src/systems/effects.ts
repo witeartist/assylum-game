@@ -9,8 +9,8 @@ export function bindEffects(world: World): void {
   world.events.on("runnerCaught", ({ actor }) => {
     const pool = scene.add.image(actor.x, actor.feetY, "decals/blood_pool_1").setDepth(DEPTH.floorObjects).setRotation(Math.random() * 6.28);
     pool.setDisplaySize(TILE * 1.8, TILE * 1.8);
-    const body = scene.add.image(actor.x, actor.feetY - 6, "interactive/corpse").setDepth(actor.feetY - 8);
-    body.setDisplaySize(TILE * 1.1, TILE * 1.1);
+    const body = scene.add.image(actor.x, actor.feetY - 6, "interactive/corpse").setDepth(actor.feetY - 8).setRotation((Math.random() - 0.5) * 0.8);
+    body.setScale(TILE * 0.9 / body.width);
     const strong = actor === world.local;
     world.shake(strong ? 400 : 200, strong ? 0.02 : 0.01);
   });
