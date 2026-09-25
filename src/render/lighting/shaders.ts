@@ -63,34 +63,21 @@ bool inBox(vec2 p, vec4 b) { return p.x >= b.x && p.x <= b.z && p.y >= b.y && p.
 // Does the segment p + t·d (t in 0..1) touch box b?
 bool segBox(vec2 p, vec2 d, vec4 b) {
   if (b.x > b.z) return false;
-  vec2 dd = vec2(abs(d.x) < 1e-3 ? 1e-3 : d.x, abs(d.y) < 1e-3 ? 1e-3 : d.y);
+  vec2 dd = vec2(abs(d.x) < 1e-4 ? 1e-4 : d.x, abs(d.y) < 1e-4 ? 1e-4 : d.y);
   vec2 t0 = (b.xy - p) / dd, t1 = (b.zw - p) / dd;
   vec2 lo = min(t0, t1), hi = max(t0, t1);
   return max(max(lo.x, lo.y), 0.0) <= min(min(hi.x, hi.y), 1.0);
 }
 
-// Does the segment p→q (tiles) cross the thin wall of this code in this cell? A band holding an end point doesn't count.
-bool crossesThin(float code, vec2 cell, vec2 p, vec2 q) {
-  vec4 h, v;
-  thinBands(code, h, v);
-  vec2 a = p - cell, b = q - cell, d = b - a;
-  if (!inBox(a, h) && !inBox(b, h) && segBox(a, d, h)) return true;
-  return !inBox(a, v) && !inBox(b, v) && segBox(a, d, v);
-}
-
-// 1.0 if the segment a→b (world px) crosses no wall. A whole solid cell blocks; a thin wall blocks
-// where its band is. The cells of the end points count only for thin walls, and the start cell
-// only with fromStart set (a wall top starts inside its own wall).
-float trace(vec2 a, vec2 b, float fromStart) {
+// 1.0 if the segment a→b (world px) crosses no wall; a starts on open floor. A whole solid cell
+// blocks, except the cells of the end points; a thin wall blocks where its band is, unless the
+// band holds an end point (a lamp hangs on a wall).
+float trace(vec2 a, vec2 b) {
   vec2 p = a / uTile;
   vec2 q = b / uTile;
+  vec2 d = q - p;
   vec2 cell = floor(p);
   vec2 end = floor(q);
-  vec2 o = occAt(cell);
-  if (fromStart > 0.5 && o.x > 0.3 && o.y > 15.5 && crossesThin(o.y, cell, p, q)) return 0.0;
-  o = occAt(end);
-  if ((end.x != cell.x || end.y != cell.y) && o.x > 0.3 && o.y > 15.5 && crossesThin(o.y, end, p, q)) return 0.0;
-  vec2 d = q - p;
   vec2 s = vec2(d.x >= 0.0 ? 1.0 : -1.0, d.y >= 0.0 ? 1.0 : -1.0);
   vec2 ad = max(abs(d), vec2(1e-5));
   vec2 tDelta = 1.0 / ad;
@@ -98,12 +85,22 @@ float trace(vec2 a, vec2 b, float fromStart) {
     (s.x > 0.0 ? cell.x + 1.0 - p.x : p.x - cell.x) / ad.x,
     (s.y > 0.0 ? cell.y + 1.0 - p.y : p.y - cell.y) / ad.y);
   for (int i = 0; i < MAX_STEPS; i++) {
-    if (min(tMax.x, tMax.y) >= 1.0) return 1.0;
+    bool last = cell.x == end.x && cell.y == end.y;
+    vec2 o = occAt(cell);
+    if (o.x > 0.3) {
+      if (o.y < 15.5) {
+        if (i > 0 && !last) return 0.0;
+      } else {
+        vec4 h, v;
+        thinBands(o.y, h, v);
+        vec2 lp = p - cell, lq = q - cell;
+        if (!inBox(lp, h) && !(last && inBox(lq, h)) && segBox(lp, d, h)) return 0.0;
+        if (!inBox(lp, v) && !(last && inBox(lq, v)) && segBox(lp, d, v)) return 0.0;
+      }
+    }
+    if (last || min(tMax.x, tMax.y) >= 1.0) return 1.0;
     if (tMax.x < tMax.y) { cell.x += s.x; tMax.x += tDelta.x; }
     else { cell.y += s.y; tMax.y += tDelta.y; }
-    if (cell.x == end.x && cell.y == end.y) return 1.0;
-    o = occAt(cell);
-    if (o.x > 0.3 && (o.y < 15.5 || crossesThin(o.y, cell, p, q))) return 0.0;
   }
   return 1.0;
 }
@@ -120,6 +117,38 @@ float solidAt(vec2 p, out float thin) {
   vec2 l = p / uTile - cell;
   thin = 1.0;
   return inBox(l, h) || inBox(l, v) ? o.x : 0.0;
+}
+
+// A wall top at ground point g is seen and lit like the floor right beside its wall, on the side
+// facing the other point: across the north or south face of a wall running west–east, across the
+// west or east face of one running north–south (a block or a corner: either). Never through the
+// wall it stands on, so its top is lit evenly; and a wall that bounds other rooms stays dark.
+float traceTop(vec2 g, vec2 to) {
+  vec2 cell = floor(g / uTile);
+  vec2 o = occAt(cell);
+  vec2 lo = cell * uTile;
+  float y0 = lo.y, y1 = lo.y + uTile, x0 = lo.x, x1 = lo.x + uTile;
+  bool acrossY = true, acrossX = true;
+  if (o.y > 15.5) {
+    vec4 h, v;
+    thinBands(o.y, h, v);
+    vec2 l = g / uTile - cell;
+    acrossY = inBox(l, h);
+    acrossX = inBox(l, v);
+    y0 = lo.y + h.y * uTile; y1 = lo.y + h.w * uTile;
+    x0 = lo.x + v.x * uTile; x1 = lo.x + v.z * uTile;
+  }
+  float thin;
+  float seen = 0.0;
+  if (acrossY) {
+    vec2 c = vec2(g.x, to.y < g.y ? y0 - 0.5 : y1 + 0.5);
+    if (solidAt(c, thin) < 0.3) seen = trace(c, to);
+  }
+  if (seen < 0.5 && acrossX) {
+    vec2 c = vec2(to.x < g.x ? x0 - 0.5 : x1 + 0.5, g.y);
+    if (solidAt(c, thin) < 0.3) seen = trace(c, to);
+  }
+  return seen;
 }
 
 // What the pixel shows (0 floor, 1 wall front, 2 wall top, 2.5 thin wall top) and the ground
@@ -164,11 +193,12 @@ void main() {
   float sightFade = uPhoto > 0.5 ? 1.0 : 1.0 - smoothstep(uSight * 0.7, uSight * 1.2, length(g - uViewer));
   vec3 sum = vec3(0.0);
 
-  // Out of the viewer's line of sight: nothing at all. (A wall top is seen only if the wall
-  // itself faces the viewer — the tops deep inside a wall mass stay black.)
-  float fromStart = m < 1.5 ? 1.0 : 0.0;
-  float top = m > 2.25 ? uThinTop : m > 1.5 ? uTopLight : 1.0;
-  if (uPhoto < 0.5 && trace(g, uViewer, fromStart) < 0.5) { gl_FragColor = vec4(uAmbient * top * 0.5, 0.0); return; }
+  // Out of the viewer's line of sight: nothing at all. (A wall top shows if the floor beside its
+  // wall on the viewer's side is in sight: the whole top of a wall facing the viewer, never cut
+  // into squares, while walls that bound other rooms stay black.)
+  bool isTop = m > 1.5;
+  float top = m > 2.25 ? uThinTop : isTop ? uTopLight : 1.0;
+  if (uPhoto < 0.5 && (isTop ? traceTop(g, uViewer) : trace(g, uViewer)) < 0.5) { gl_FragColor = vec4(uAmbient * top * 0.5, 0.0); return; }
 
   float jitter = (hash(gl_FragCoord.xy) - 0.5) * uSoft;
   float haze = 0.0;
@@ -180,7 +210,8 @@ void main() {
     if (k <= 0.0) continue;
     vec2 toL = A.xy - g;
     vec2 side = vec2(-toL.y, toL.x) / max(length(toL), 0.001);
-    if (trace(g, A.xy + side * jitter, fromStart) <= 0.0) continue;
+    vec2 at = A.xy + side * jitter;
+    if ((isTop ? traceTop(g, at) : trace(g, at)) <= 0.0) continue;
     sum += B.rgb * k;
     if (B.a > 1.5 && m < 0.5) haze += k;
   }

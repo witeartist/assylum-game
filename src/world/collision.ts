@@ -1,8 +1,8 @@
 // Wall collision. Whole walls are an invisible tilemap layer mirroring the WalkGrid: arcade physics
 // only tests the few tiles around each body, and walls have no seams to snag on. Thin walls
-// (walls.ts) are static strips instead, one set per body size, each just wide enough that the
-// centre of that body never enters the wall's tile: characters walk right up to a partition, and
-// for paths, sight and sound every tile still means what it did.
+// (walls.ts) and furniture are static strips instead, one set per body size, each just big enough
+// that the centre of that body never enters the tile: characters walk right up to a partition or
+// a small barrel, and for paths, sight and sound every tile still means what it did.
 import Phaser from "phaser";
 import { MAP_W, MAP_H, TILE } from "../core/constants";
 import type { Tile } from "../core/types";
@@ -15,6 +15,9 @@ const CLEARANCE = 2;
 
 interface Rect { x0: number; y0: number; x1: number; y1: number; }
 
+/** A solid piece of furniture: the tiles it takes and the floor it really covers, world px. */
+export interface PropFoot { tiles: Tile[]; foot: Rect; }
+
 /** The strips of one body size: walls merged into long runs, doors one per tile (they open and shut). */
 interface Strips { group: Phaser.Physics.Arcade.StaticGroup; doors: Map<number, Phaser.GameObjects.Zone[]>; }
 
@@ -24,7 +27,9 @@ export class CollisionLayer {
   /** Thin door tiles that are shut right now. */
   private shut = new Set<number>();
 
-  constructor(private scene: Phaser.Scene, grid: WalkGrid, private shapes: Uint8Array, private rows: readonly string[]) {
+  constructor(private scene: Phaser.Scene, grid: WalkGrid, private shapes: Uint8Array, private rows: readonly string[],
+    private props: readonly PropFoot[] = []) {
+    const propTiles = new Set(props.flatMap(p => p.tiles.map(t => t.row * MAP_W + t.col)));
     if (!scene.textures.exists(TEXTURE)) {
       const c = document.createElement("canvas");
       c.width = TILE; c.height = TILE;
@@ -36,7 +41,7 @@ export class CollisionLayer {
       for (let c = 0; c < MAP_W; c++) {
         const i = r * MAP_W + c;
         if (grid.isSolid(c, r) && shapes[i] >= THIN && rows[r][c] !== "#") this.shut.add(i);
-        row.push(grid.isSolid(c, r) && shapes[i] < THIN ? 0 : -1);
+        row.push(grid.isSolid(c, r) && shapes[i] < THIN && !propTiles.has(i) ? 0 : -1);
       }
       data.push(row);
     }
@@ -94,6 +99,16 @@ export class CollisionLayer {
       doors.set(i, zones);
     }
     mergeRuns(walls).forEach(add);
+    // Furniture: its real floor, grown where needed so the body's centre stays off its tiles.
+    const grow = Math.max(0, size / 2 - CLEARANCE);
+    for (const p of this.props) {
+      const cols = p.tiles.map(t => t.col), rows = p.tiles.map(t => t.row);
+      const t: Rect = { x0: Math.min(...cols) * TILE, y0: Math.min(...rows) * TILE, x1: (Math.max(...cols) + 1) * TILE, y1: (Math.max(...rows) + 1) * TILE };
+      add({
+        x0: t.x0 + Math.min(grow, Math.max(0, p.foot.x0 - t.x0)), x1: t.x1 - Math.min(grow, Math.max(0, t.x1 - p.foot.x1)),
+        y0: t.y0 + Math.min(grow, Math.max(0, p.foot.y0 - t.y0)), y1: t.y1 - Math.min(grow, Math.max(0, t.y1 - p.foot.y1)),
+      });
+    }
     const s = { group, doors };
     this.strips.set(size, s);
     return s;

@@ -1,6 +1,7 @@
 // Doors in doorways. Anyone can open or close one (E); monsters open them on their way — the
 // hunter with a pause, the boss by smashing through. A closed door blocks sight, light and
-// sound (and slows whoever chases you); opening or shutting one creaks.
+// sound (and slows whoever chases you); opening or shutting one creaks. Shutting a door while
+// standing in it steps you out to your side first. The leaf swings on its hinge.
 import type Phaser from "phaser";
 import { TILE, WALL_HEIGHT } from "../core/constants";
 import { dist, tileCenter, tileIndex } from "../core/geom";
@@ -26,6 +27,10 @@ export interface Gate {
 
 /** Seconds a door holds each kind of actor up. */
 const OPEN_TIME = { runner: 0.35, hunter: 0.7, boss: 1.1 };
+/** How long the leaf takes to swing, ms. */
+const SWING_MS = 170;
+/** A door slammed on the run is louder. */
+const SLAM = 1.5;
 export const GATE_ART = {
   h: "interactive/door_wood_h", h2: "interactive/door_wood_h2", hOpen: "interactive/door_wood_h_open",
   v: "interactive/door_wood_v", vOpen: "interactive/door_wood_v_open",
@@ -64,11 +69,19 @@ export class Gates {
     return best;
   }
 
-  /** E next to a door. */
+  /** E next to a door. Shutting it from the doorway steps `by` out to its side first. */
   toggle(i: number, by: Actor): void {
     const g = this.gates[i];
     if (!g) return;
-    if (g.open && this.blocked(g)) { if (by === this.world.local) this.world.toast("Дверь не закрыть — кто-то в проходе", "neutral"); return; }
+    if (g.open) {
+      const inside = this.inDoorway(g);
+      const out = inside.includes(by) ? this.stepOut(g, by) : null;
+      if (inside.some(a => a !== by) || (inside.includes(by) && !out)) {
+        if (by === this.world.local) this.world.toast("Дверь не закрыть — кто-то в проходе", "neutral");
+        return;
+      }
+      if (out) by.stepTo(out);
+    }
     this.set(i, !g.open, by);
   }
 
@@ -78,7 +91,8 @@ export class Gates {
     if (!g || g.open === open) return;
     g.open = open;
     this.apply(g);
-    const loud = by?.role === "boss" ? 10 : by?.gait === "sneak" ? 2.5 : NOISE.door;
+    this.swing(g);
+    const loud = by?.role === "boss" ? 10 : by?.gait === "sneak" ? 2.5 : by?.gait === "run" && !open ? NOISE.door * SLAM : NOISE.door;
     w.noise.emit(g.x, g.y, loud, "door", by);
     if (by?.role === "boss" && w.local.inPlay && dist(w.local, g) < TILE * 10) w.shake(250, 0.01);
     w.events.emit("gateChanged", { index: i, open, by: by?.id ?? "", remote });
@@ -99,9 +113,60 @@ export class Gates {
     return true;
   }
 
-  /** Someone stands in the doorway. */
-  private blocked(g: Gate): boolean {
-    return this.world.actors.some(a => a.inPlay && !a.hiding && g.tiles.some(t => dist(a.authPos, tileCenter(t)) < TILE * 0.8));
+  /** Who stands in the doorway. */
+  private inDoorway(g: Gate): Actor[] {
+    return this.world.actors.filter(a => a.inPlay && !a.hiding && g.tiles.some(t => dist(a.authPos, tileCenter(t)) < TILE * 0.8));
+  }
+
+  /**
+   * Where `a` steps to so the door can shut: the tile past the door on the side of the wall it
+   * stands on (inside stays inside); dead in the middle, the way it faces, so the door shuts
+   * behind it. The other side if that one is taken; null if neither is free.
+   */
+  private stepOut(g: Gate, a: Actor): Vec2 | null {
+    const w = this.world;
+    const t = g.tiles.reduce((best, t) => dist(a, tileCenter(t)) < dist(a, tileCenter(best)) ? t : best);
+    const c = tileCenter(t);
+    // The wall line: a thin wall running west–east lies along the bottom of its tile.
+    const off = g.horizontal ? a.y - (g.thin ? t.row * TILE + TILE - THIN_WALL / 2 : c.y) : a.x - c.x;
+    const facing = g.horizontal ? Math.sin(a.facing) : Math.cos(a.facing);
+    const side = Math.abs(off) > 2 ? Math.sign(off) : facing >= 0 ? 1 : -1;
+    for (const s of [side, -side]) {
+      const to = g.horizontal ? { col: t.col, row: t.row + s } : { col: t.col + s, row: t.row };
+      const p = tileCenter(to);
+      if (w.grid.isSolid(to.col, to.row) || w.actors.some(o => o !== a && o.inPlay && !o.hiding && dist(o.authPos, p) < TILE * 0.7)) continue;
+      return p;
+    }
+    return null;
+  }
+
+  /** The leaf swings on its hinge: a shutting door grows out of it, an opening one folds into it. */
+  private swing(g: Gate): void {
+    const s = g.sprite, tweens = this.world.scene.tweens;
+    tweens.killTweensOf(s);
+    const first = g.tiles[0], n = g.tiles.length;
+    if (g.horizontal) {
+      // The hinge is on the left, where the open leaf stands.
+      const hinge = first.col * TILE, base = (first.row + 1) * TILE;
+      if (!g.open) {
+        const full = s.scaleX;
+        s.setOrigin(0, 1).setPosition(hinge, base).setScale(full * 0.1, s.scaleY);
+        tweens.add({ targets: s, scaleX: full, duration: SWING_MS, ease: "Quad.easeOut", onComplete: () => this.apply(g) });
+      } else {
+        s.setTexture(n > 1 ? GATE_ART.h2 : GATE_ART.h).setOrigin(0, 1).setPosition(hinge, base).setDisplaySize(n * TILE, THIN_WALL + WALL_HEIGHT);
+        tweens.add({ targets: s, scaleX: s.scaleX * 0.1, duration: SWING_MS * 0.7, ease: "Quad.easeIn", onComplete: () => this.apply(g) });
+      }
+    } else if (g.open) {
+      // The open leaf turns from edge-on to face-on.
+      const full = s.scaleX;
+      s.setScale(full * 0.05, s.scaleY);
+      tweens.add({ targets: s, scaleX: full, duration: SWING_MS, ease: "Quad.easeOut" });
+    } else {
+      const last = g.tiles[n - 1], foot = (last.row + 1) * TILE - 3;
+      const hinge = first.col * TILE + (g.thin ? TILE / 2 + THIN_WALL / 2 : TILE);
+      s.setTexture(GATE_ART.vOpen).setOrigin(0, 1).setPosition(hinge, foot).setDisplaySize(TILE * 0.9, THIN_WALL + WALL_HEIGHT).setDepth(foot);
+      tweens.add({ targets: s, scaleX: s.scaleX * 0.05, duration: SWING_MS * 0.8, ease: "Quad.easeIn", onComplete: () => this.apply(g) });
+    }
   }
 
   /** Walls, sight and the picture follow the door's state. */

@@ -62,7 +62,7 @@ export abstract class MonsterBrain implements Brain {
   /** Walk (or run) to `dest`, re-planning every `every` seconds. True once there. */
   protected goTo(dest: Tile, gait: Gait, dt: number, every = 0.6): boolean {
     const a = this.actor, here = worldToTile(a);
-    if (sameTile(here, dest) && dist(a, tileCenter(dest)) < TILE * 0.4) { a.halt(); return true; }
+    if (sameTile(here, dest) && dist(a, tileCenter(dest)) < TILE * 0.4) { a.halt(); a.path = []; return true; }
     a.pathTimer -= dt;
     if (!this.dest || !sameTile(this.dest, dest) || a.path.length === 0 || a.pathTimer <= 0) {
       this.dest = dest;

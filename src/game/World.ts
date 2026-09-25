@@ -17,7 +17,7 @@ import type { Doors } from "../systems/doors";
 import type { Hiding } from "../systems/hiding";
 import type { Lighting } from "../systems/lighting";
 import type { FoxFlash } from "../systems/foxFlash";
-import type { Vision } from "../systems/vision";
+import type { StandingProp, Vision } from "../systems/vision";
 import type { Noise, NoiseKind } from "../systems/noise";
 import type { Director } from "../systems/director";
 import type { Round } from "../systems/round";
@@ -76,6 +76,8 @@ export class World {
   readonly walls: Uint8Array;
   readonly rng: Rng;
   readonly actors: Actor[] = [];
+  /** Standing objects (furniture, lockers, beds, wall fixtures): drawn only while in sight. */
+  readonly props: StandingProp[] = [];
   /** Which bot is going for which goal ("key:2" → bot), so they split the work. */
   readonly claims = new Map<string, Actor>();
   private readonly roomLookup: Int16Array;
@@ -121,6 +123,11 @@ export class World {
   get multiplayer(): boolean { return this.net !== "solo"; }
 
   addActor(a: Actor): Actor { this.actors.push(a); return a; }
+  /**
+   * `at`: points on the floor it stands on; it shows while the viewer sees any of them.
+   * `casts`: it stands up from the floor and throws a shadow (render/shadows.ts).
+   */
+  addProp(sprite: Phaser.GameObjects.Image, at: Vec2[], casts = false): void { this.props.push({ sprite, at, fade: 1, casts }); }
   byId(id: string): Actor | undefined { return this.actors.find(a => a.id === id); }
 
   runners(): Actor[] { return this.actors.filter(a => a.role === "runner"); }

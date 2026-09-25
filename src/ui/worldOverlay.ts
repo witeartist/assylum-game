@@ -11,6 +11,7 @@ import { VIEW_ZOOM } from "../render/display";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import type { NoiseEvent } from "../systems/noise";
+import { hasLineOfSight } from "../world/grid";
 import { label } from "./components";
 import { TONES, UI_DEPTH } from "./theme";
 
@@ -76,18 +77,45 @@ export class WorldOverlay {
     for (let i = icon; i < this.icons.length; i++) this.icons[i].setVisible(false);
   }
 
-  /** A sound's ring, if the viewer could hear it (your own steps show faintly). */
+  /**
+   * A sound the viewer hears: two soft broken rings spreading from it, the second lagging.
+   * Monsters' are heavier, slower and tremble; a sound from behind a wall comes out faint and
+   * torn. Your own steps: a small pulse at your feet.
+   */
   private ripple(e: NoiseEvent, viewer: Actor): void {
-    const w = this.world, own = e.source === viewer;
+    const w = this.world, g = this.g, own = e.source === viewer;
     if (!own && !w.noise.hears(viewer, e)) return;
-    const progress = e.age / RIPPLE_LIFE;
-    const alpha = (own ? 0.12 : 0.4) * (1 - progress);
-    if (alpha < 0.01) return;
     const who = e.source?.role;
+    const monster = !!who && who !== "runner";
     const color = who === "runner" ? RIPPLE.runner : who ? RIPPLE.monster : RIPPLE.thing;
-    const p = this.world.camera.toScreen(e);
-    const r = Math.min(e.radius, TILE * 4) * (0.25 + progress * 0.75) * VIEW_ZOOM;
-    this.g.lineStyle(who && who !== "runner" ? 2 : 1.5, color, alpha).strokeCircle(p.x, p.y, r);
+    const p = w.camera.toScreen(e);
+    if (own) {
+      const k = e.age / (RIPPLE_LIFE * 0.45);
+      if (k < 1) g.lineStyle(1, color, 0.22 * (1 - k)).strokeCircle(p.x, p.y, (2 + k * 6) * VIEW_ZOOM);
+      return;
+    }
+    const clear = hasLineOfSight(w.sight, viewer, e);
+    const life = RIPPLE_LIFE * (monster ? 1.35 : 1);
+    const maxR = Math.min(e.radius, TILE * 4) * VIEW_ZOOM;
+    const pieces = clear ? 5 : 3;
+    const gap = Math.PI * 2 / pieces;
+    for (const lag of [0, 0.25]) {
+      const k = (e.age / life - lag) / (1 - lag);
+      if (k <= 0 || k >= 1) continue;
+      // Quick at first, then slowing as it spreads.
+      const r = maxR * (0.15 + 0.85 * (1 - (1 - k) * (1 - k)));
+      const alpha = (monster ? 0.55 : 0.45) * (1 - k) * (lag ? 0.55 : 1) * (clear ? 1 : 0.6);
+      for (let i = 0; i < pieces; i++) {
+        const a0 = e.id * 2.39 + i * gap + k * 0.5;
+        const span = gap * (clear ? 0.64 : 0.38) * (0.8 + 0.2 * Math.sin(e.id + i * 1.7));
+        const rr = r + (monster ? Math.sin(this.t * 21 + i * 2.1 + e.id) * 1.6 * VIEW_ZOOM : 0);
+        g.lineStyle(monster ? 6 : 4.5, color, alpha * 0.22);
+        g.beginPath(); g.arc(p.x, p.y, rr, a0, a0 + span); g.strokePath();
+        if (!clear) continue;
+        g.lineStyle(monster ? 2.2 : 1.4, color, alpha);
+        g.beginPath(); g.arc(p.x, p.y, rr, a0 + span * 0.08, a0 + span * 0.92); g.strokePath();
+      }
+    }
   }
 
   /** An icon over a world point; `edge`: if it's off screen, pin it to the border. */

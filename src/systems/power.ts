@@ -39,6 +39,7 @@ export class Power {
     });
     const b = world.level.fuseBox;
     this.box = b ? { ...tileCenter(b), sprite: placeStanding(scene, FUSE_BOX, tileCenter(b).x, b.row * TILE + TILE * 0.35, BOX_WIDTH) } : null;
+    if (this.box) world.addProp(this.box.sprite, [{ x: this.box.x, y: this.box.sprite.y + 2 }]);
     world.events.on("runnerCaught", ({ actor }) => this.dropFrom(actor));
     world.events.on("runnerLeft", ({ actor }) => this.dropFrom(actor));
   }

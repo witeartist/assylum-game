@@ -98,21 +98,27 @@ export class Lighting {
   lightAt(p: Vec2): number {
     const t = worldToTile(p);
     if (t.col < 0 || t.row < 0 || t.col >= MAP_W || t.row >= MAP_H) return 0;
-    const lampsHere = this.lampsFor[tileIndex(t.col, t.row)];
     let sum = 0;
     for (const l of this.lights) {
-      const d = dist(l, p);
-      if (d >= l.radius) continue;
-      const k = falloff(l, p, d);
-      if (k <= 0.01) continue;
-      if (l.kind === 0) {
-        // Lamps: the baked table says which ones reach this tile.
-        if (!lampsHere.some(i => this.lamps[i].x === l.x && this.lamps[i].y === l.y)) continue;
-      } else if (d > TILE * 0.5 && !hasLineOfSight(this.world.sight, l, p)) continue;
-      sum += k;
+      sum += this.strengthAt(l, p);
       if (sum >= 1) return sum;
     }
     return sum;
+  }
+
+  /** How strongly light `l` falls on `p` (0 where walls or doors block it). */
+  strengthAt(l: FrameLight, p: Vec2): number {
+    const d = dist(l, p);
+    if (d >= l.radius) return 0;
+    const k = falloff(l, p, d);
+    if (k <= 0.01) return 0;
+    if (l.kind === 0) {
+      // Lamps: the baked table says which ones reach this tile.
+      const t = worldToTile(p);
+      if (t.col < 0 || t.row < 0 || t.col >= MAP_W || t.row >= MAP_H) return 0;
+      if (!this.lampsFor[tileIndex(t.col, t.row)].some(i => this.lamps[i].x === l.x && this.lamps[i].y === l.y)) return 0;
+    } else if (d > TILE * 0.5 && !hasLineOfSight(this.world.sight, l, p)) return 0;
+    return k;
   }
 
   /** Lit enough to be seen. */

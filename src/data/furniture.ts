@@ -21,39 +21,46 @@ export interface FurnitureDef {
   with?: string;
   /** Relative chance to be picked. */
   weight: number;
+  /**
+   * On-screen height of the picture, world px (a runner is 30). Without it the picture spans
+   * its footprint's width — right for beds and tables, too big for small things.
+   */
+  height?: number;
 }
 
 export const FURNITURE: FurnitureDef[] = [
-  { key: "props/bedside_cabinet",    w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward"], weight: 3 },
-  { key: "props/iv_stand",           w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "procedure"], weight: 2 },
-  { key: "props/wheelchair",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "corridor"], weight: 1 },
-  { key: "props/chair_metal",        w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "canteen"], weight: 2 },
+  { key: "props/bedside_cabinet",    w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward"], weight: 3, height: 20 },
+  { key: "props/iv_stand",           w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "procedure"], weight: 2, height: 34 },
+  { key: "props/wheelchair",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "corridor"], weight: 1, height: 26 },
+  { key: "props/chair_metal",        w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "canteen"], weight: 2, height: 22 },
   { key: "props/operating_table",    w: 1, h: 2, solid: true,  spot: "center", places: ["procedure"], weight: 3, with: "props/instrument_trolley" },
-  { key: "props/instrument_trolley", w: 1, h: 1, solid: true,  spot: "wall",   places: ["procedure", "morgue"], weight: 2 },
-  { key: "props/medicine_cabinet",   w: 1, h: 1, solid: true,  spot: "north",  places: ["procedure", "storage"], weight: 2 },
-  { key: "props/sink",               w: 1, h: 1, solid: true,  spot: "north",  places: ["procedure", "morgue", "isolation"], weight: 2 },
+  { key: "props/instrument_trolley", w: 1, h: 1, solid: true,  spot: "wall",   places: ["procedure", "morgue"], weight: 2, height: 22 },
+  { key: "props/medicine_cabinet",   w: 1, h: 1, solid: true,  spot: "north",  places: ["procedure", "storage"], weight: 2, height: 34 },
+  { key: "props/sink",               w: 1, h: 1, solid: true,  spot: "north",  places: ["procedure", "morgue", "isolation"], weight: 2, height: 22 },
   { key: "props/canteen_table",      w: 3, h: 1, solid: true,  spot: "center", places: ["canteen"], weight: 5, with: "props/canteen_bench" },
   { key: "props/canteen_bench",      w: 3, h: 1, solid: true,  spot: "wall",   places: ["canteen"], weight: 1 },
-  { key: "props/serving_counter",    w: 3, h: 1, solid: true,  spot: "north",  places: ["canteen"], weight: 2 },
+  { key: "props/serving_counter",    w: 3, h: 1, solid: true,  spot: "north",  places: ["canteen"], weight: 2, height: 40 },
   { key: "props/restraint_bed",      w: 1, h: 2, solid: true,  spot: "center", places: ["isolation"], weight: 4 },
-  { key: "props/straitjacket",       w: 1, h: 1, solid: false, spot: "wall",   places: ["isolation"], weight: 2 },
-  { key: "props/metal_toilet",       w: 1, h: 1, solid: true,  spot: "north",  places: ["isolation"], weight: 2 },
-  { key: "props/shelf_boxes",        w: 2, h: 1, solid: true,  spot: "north",  places: ["storage"], weight: 4 },
-  { key: "props/boxes_stack",        w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage"], weight: 3 },
-  { key: "props/barrel",             w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage"], weight: 2 },
-  { key: "props/mop_bucket",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage", "corridor"], weight: 1 },
-  { key: "props/linen_cart",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage", "ward"], weight: 1 },
+  { key: "props/straitjacket",       w: 1, h: 1, solid: false, spot: "wall",   places: ["isolation"], weight: 2, height: 16 },
+  { key: "props/metal_toilet",       w: 1, h: 1, solid: true,  spot: "north",  places: ["isolation"], weight: 2, height: 18 },
+  { key: "props/shelf_boxes",        w: 2, h: 1, solid: true,  spot: "north",  places: ["storage"], weight: 4, height: 40 },
+  { key: "props/boxes_stack",        w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage"], weight: 3, height: 24 },
+  { key: "props/barrel",             w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage"], weight: 2, height: 22 },
+  { key: "props/mop_bucket",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage", "corridor"], weight: 1, height: 26 },
+  { key: "props/linen_cart",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage", "ward"], weight: 1, height: 24 },
   { key: "props/autopsy_table",      w: 1, h: 2, solid: true,  spot: "center", places: ["morgue"], weight: 3 },
   { key: "props/body_on_gurney",     w: 1, h: 2, solid: true,  spot: "center", places: ["morgue"], weight: 3 },
-  { key: "props/morgue_fridge",      w: 2, h: 1, solid: true,  spot: "north",  places: ["morgue"], weight: 3 },
+  { key: "props/morgue_fridge",      w: 2, h: 1, solid: true,  spot: "north",  places: ["morgue"], weight: 3, height: 40 },
   { key: "props/body_bag",           w: 1, h: 2, solid: false, spot: "center", places: ["morgue"], weight: 2 },
   { key: "props/gurney",             w: 1, h: 2, solid: true,  spot: "wall",   places: ["corridor", "procedure"], weight: 2 },
   { key: "props/waiting_bench",      w: 2, h: 1, solid: true,  spot: "north",  places: ["corridor"], weight: 2 },
   { key: "props/nurse_desk",         w: 2, h: 1, solid: true,  spot: "north",  places: ["corridor"], weight: 1 },
-  { key: "props/radiator",           w: 1, h: 1, solid: true,  spot: "north",  places: ["corridor", "ward"], weight: 2 },
-  { key: "props/trash_bin",          w: 1, h: 1, solid: true,  spot: "wall",   places: ["corridor", "canteen"], weight: 2 },
-  { key: "props/fallen_chair",       w: 1, h: 1, solid: false, spot: "wall",   places: ["corridor", "canteen", "ward"], weight: 2 },
+  { key: "props/radiator",           w: 1, h: 1, solid: true,  spot: "north",  places: ["corridor", "ward"], weight: 2, height: 18 },
+  { key: "props/trash_bin",          w: 1, h: 1, solid: true,  spot: "wall",   places: ["corridor", "canteen"], weight: 2, height: 17 },
+  { key: "props/fallen_chair",       w: 1, h: 1, solid: false, spot: "wall",   places: ["corridor", "canteen", "ward"], weight: 2, height: 16 },
 ];
+
+export const FURNITURE_BY_KEY: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map(f => [f.key, f]));
 
 /** Pieces of furniture per room: roughly one per this many interior tiles. */
 export const TILES_PER_PIECE = 7;

@@ -1,7 +1,9 @@
 // What the local viewer (player or spectated runner) sees. The canon: darkness hides everyone.
 // You see a character only in your line of sight AND where it is lit — a lamp, a beam, a glow —
 // or right next to you. Someone walking behind you in the dark stays invisible; their flashlight
-// or footsteps may give them away.
+// or footsteps may give them away. Standing objects show only while the floor under them is in
+// sight: a tall locker behind a wall doesn't peek over it.
+import type Phaser from "phaser";
 import { TILE } from "../core/constants";
 import { dist } from "../core/geom";
 import type { Vec2 } from "../core/types";
@@ -10,8 +12,13 @@ import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import { hasLineOfSight } from "../world/grid";
 
+/** A standing object and the floor points it shows from (World.addProp); `casts`: it throws a shadow. */
+export interface StandingProp { sprite: Phaser.GameObjects.Image; at: Vec2[]; fade: number; casts: boolean; }
+
 export class Vision {
   viewer: Actor;
+  /** Screenshots: everything shows, in sight or not. Never in play. */
+  photo = false;
 
   constructor(private world: World) {
     this.viewer = world.local;
@@ -37,11 +44,21 @@ export class Vision {
       a.seen = a === this.viewer || (a === w.local && !w.round.localDone) || this.canSee(a);
       a.updateFade(dt);
     }
+    const v = this.viewer, range = this.sightRange * 1.3;
+    for (const p of w.props) {
+      const seen = this.photo || p.at.some(q => dist(v, q) <= range && hasLineOfSight(w.sight, v, q));
+      const target = seen ? 1 : 0;
+      if (p.fade === target) continue;
+      p.fade += (target - p.fade) * Math.min(1, dt * (seen ? 14 : 8));
+      if (Math.abs(p.fade - target) < 0.02) p.fade = target;
+      p.sprite.setAlpha(p.fade);
+    }
   }
 
   /** Can the viewer see this actor right now? */
   canSee(a: Actor): boolean {
     if (!a.inPlay || a.hiding) return false;
+    if (this.photo) return true;
     const v = this.viewer, d = dist(v, a);
     if (d > this.sightRange * 1.3 || !hasLineOfSight(this.world.sight, v, a)) return false;
     if (d <= this.darkSight(a)) return true;

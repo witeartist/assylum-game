@@ -33,6 +33,8 @@ const WAYPOINT_REACHED = 4;
 const STUCK_TIME = 0.2;
 const BOB_HEIGHT = 2.2;
 const BOB_TILT = 0.05;
+/** How fast the picture catches up after a step (stepTo), per second. */
+const SLIDE_RATE = 14;
 
 /**
  * The Actor itself is an invisible physics body centred on its position; what you see is
@@ -73,6 +75,8 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   seen = true;
   /** Drawn opacity, eased towards `seen`. */
   fade = 1;
+  /** Where the picture still is relative to the body after a step (stepTo), px; shrinks to 0. */
+  private slide = { x: 0, y: 0 };
   brain: Brain | null = null;
   path: Tile[] = [];
   pathTimer = 0;
@@ -158,6 +162,14 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     const b = this.arcadeBody;
     if (b) b.reset(p.x, p.y); else this.setPosition(p.x, p.y);
     if (this.net) { this.net.x = p.x; this.net.y = p.y; this.netTarget = { ...p }; }
+  }
+
+  /** Jump to `p` at once, while the picture glides there over a moment (stepping out of a doorway). */
+  stepTo(p: Vec2): void {
+    this.slide.x += this.x - p.x;
+    this.slide.y += this.y - p.y;
+    this.halt();
+    this.teleport(p);
   }
 
   /** Walk along `path`, skipping reached waypoints; gives up on a waypoint it is stuck on. */
@@ -291,10 +303,14 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     const cx = Math.cos(this.facing);
     if (cx < -0.25) this.view.setFlipX(true);
     else if (cx > 0.25) this.view.setFlipX(false);
-    this.view.setPosition(this.x, this.feetY - Math.abs(phase) * BOB_HEIGHT)
+    const k = Math.min(1, dt * SLIDE_RATE);
+    this.slide.x -= this.slide.x * k;
+    this.slide.y -= this.slide.y * k;
+    const x = this.x + this.slide.x, feet = this.feetY + this.slide.y;
+    this.view.setPosition(x, feet - Math.abs(phase) * BOB_HEIGHT)
       .setRotation(speed > 20 ? phase * BOB_TILT : 0)
-      .setDepth(this.feetY);
-    this.shadow.setPosition(this.x, this.feetY - 1);
+      .setDepth(feet);
+    this.shadow.setPosition(x, feet - 1);
   }
 
   override destroy(fromScene?: boolean): void {

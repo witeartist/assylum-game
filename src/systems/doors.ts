@@ -48,7 +48,9 @@ export class Doors {
       const t = data.terminalTile, p = tileCenter(t);
       // Hung on the wall above its tile when there is one, otherwise standing on the floor.
       const onWall = world.sight.isSolid(t.col, t.row - 1);
-      const terminal = placeStanding(scene, "interactive/terminal", p.x, onWall ? t.row * TILE + 3 : p.y + TILE * 0.3, TERMINAL_WIDTH);
+      const base = onWall ? t.row * TILE + 3 : p.y + TILE * 0.3;
+      const terminal = placeStanding(scene, "interactive/terminal", p.x, base, TERMINAL_WIDTH);
+      world.addProp(terminal, [{ x: p.x, y: base + 2 }]);
       return { data, open: false, terminal, hack: 0 };
     });
   }

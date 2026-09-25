@@ -8,6 +8,7 @@ import type { Vec2 } from "../core/types";
 import { BED_RANGE, BREATH, HUNTER_AI, LOCKER_RANGE, NOISE } from "../data/balance";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
+import { standingLayout } from "../render/propLayout";
 import { placeStanding, sideHug } from "../render/worldView";
 import { isPlaceholder } from "../render/textures";
 
@@ -23,7 +24,8 @@ export interface HideSpot extends Vec2 {
 /** Furniture you can crawl under. */
 const HIDE_UNDER = new Set(["props/restraint_bed"]);
 
-const LOCKER_WIDTH = TILE * 0.62;
+/** On-screen height of a locker, world px (a runner is 30). */
+const LOCKER_HEIGHT = 40;
 const LOCKER_SIDE = { closed: "interactive/locker_side_closed", open: "interactive/locker_side_open" };
 /** A hidden runner breathes audibly this often when nobody holds their breath. */
 const BREATH_EVERY = 1.1;
@@ -47,8 +49,11 @@ export class Hiding {
       // Against a side wall a locker is seen from the side (when that picture exists).
       const wall = (c: number, r: number) => world.sight.isSolid(c, r);
       const side = !wall(t.col, t.row - 1) && (wall(t.col - 1, t.row) || wall(t.col + 1, t.row)) && !isPlaceholder(LOCKER_SIDE.closed);
-      const sprite = placeStanding(scene, side ? LOCKER_SIDE.closed : "interactive/locker_closed", p.x + sideHug(world, t.col, t.row, 1, 1), p.y + TILE * 0.2, LOCKER_WIDTH);
+      const key = side ? LOCKER_SIDE.closed : "interactive/locker_closed";
+      const box = standingLayout(world, key, t.col, t.row, 1, 1, LOCKER_HEIGHT);
+      const sprite = placeStanding(scene, key, box.x, box.base, box.w);
       if (side && wall(t.col + 1, t.row)) sprite.setFlipX(true);
+      world.addProp(sprite, [{ x: box.x, y: box.base - 1 }], true);
       this.spots.push({ x: p.x, y: p.y, kind: "locker", sprite, occupant: null, out: p });
     }
     for (const bed of world.level.bedSpots) {
@@ -57,7 +62,9 @@ export class Hiding {
       // Beds cover their two tiles; the picture rises above the footprint like any 3/4 object.
       const width = (bed.orientation === "vertical" ? 1 : 2) * TILE * 0.95;
       const hug = bed.orientation === "vertical" ? 0 : sideHug(world, Math.min(bed.tile.col, bed.tile2.col), bed.tile.row, 2, 1);
-      const sprite = placeStanding(scene, bed.sprite, p.x + hug, (Math.max(bed.tile.row, bed.tile2.row) + 1) * TILE - 1, width);
+      const base = (Math.max(bed.tile.row, bed.tile2.row) + 1) * TILE - 1;
+      const sprite = placeStanding(scene, bed.sprite, p.x + hug, base, width);
+      world.addProp(sprite, [a, b, { x: p.x, y: base - 1 }], true);
       this.spots.push({ x: p.x, y: p.y, kind: "bed", sprite, occupant: null, out: p });
     }
     for (const f of world.level.furniture) {
@@ -188,8 +195,9 @@ export class Hiding {
     const s = spot.sprite;
     if (!s) return;
     const side = s.texture.key.startsWith("interactive/locker_side");
+    const height = s.displayHeight;
     s.setTexture(side ? (open ? LOCKER_SIDE.open : LOCKER_SIDE.closed) : open ? "interactive/locker_open" : "interactive/locker_closed");
-    s.setScale(LOCKER_WIDTH / s.width);
+    s.setScale(height / s.height);
   }
 
   /** Runners hiding in any spot within `range` of `p`. */

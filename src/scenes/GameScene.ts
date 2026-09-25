@@ -11,9 +11,14 @@ import { World, type NetMode } from "../game/World";
 import { spawnHunterAI, spawnLocalPlayer, spawnRemotePlayer, spawnRunnerBot } from "../game/spawn";
 import { generateLevel } from "../world/levelgen";
 import { CollisionLayer } from "../world/collision";
+import { furnitureTiles } from "../world/level";
 import { WorldView } from "../render/worldView";
+import { furnitureLayout } from "../render/propLayout";
 import { CameraRig } from "../render/cameraRig";
 import { addDust } from "../render/dust";
+import { Shadows } from "../render/shadows";
+import { Outlines } from "../render/outlines";
+import { Footprints } from "../render/footprints";
 import { LIGHTING_PIPELINE, LightingPipeline } from "../render/lighting/LightingPipeline";
 import { Lighting } from "../systems/lighting";
 import { FoxFlash } from "../systems/foxFlash";
@@ -47,6 +52,9 @@ export class GameScene extends Phaser.Scene {
   private params!: GameSceneData;
   private controls!: InputSystem;
   private netsync: NetSync | null = null;
+  private shadows: Shadows | null = null;
+  private outlines: Outlines | null = null;
+  private footprints: Footprints | null = null;
   private failed = false;
 
   constructor() { super("Game"); }
@@ -55,6 +63,9 @@ export class GameScene extends Phaser.Scene {
     this.params = data;
     this.world = null;
     this.netsync = null;
+    this.shadows = null;
+    this.outlines = null;
+    this.footprints = null;
     this.failed = false;
   }
 
@@ -72,7 +83,8 @@ export class GameScene extends Phaser.Scene {
 
     w.lighting = new Lighting(w);
     new WorldView(w);
-    w.collision = new CollisionLayer(this, w.grid, w.walls, w.level.rows);
+    const props = w.level.furniture.filter(f => f.solid).map(f => ({ tiles: furnitureTiles(f), foot: furnitureLayout(w, f).foot }));
+    w.collision = new CollisionLayer(this, w.grid, w.walls, w.level.rows, props);
     w.gates = new Gates(w);
     w.hiding = new Hiding(w);
     w.doors = new Doors(w);
@@ -81,6 +93,8 @@ export class GameScene extends Phaser.Scene {
     w.items = new Items(w);
     w.noise = new Noise(w);
     w.scent = new Scent(w);
+    this.shadows = new Shadows(w);
+    this.footprints = new Footprints(w);
 
     if (start) {
       for (const [id, p] of Object.entries(start.players)) {
@@ -102,6 +116,7 @@ export class GameScene extends Phaser.Scene {
     w.director = new Director(w);
     w.vitals = new Vitals(w);
     w.interact = new Interact(w);
+    this.outlines = new Outlines(w);
     w.vision = new Vision(w);
     bindEffects(w);
     this.controls = new InputSystem(w);
@@ -145,6 +160,9 @@ export class GameScene extends Phaser.Scene {
     w.scent.update(dt);
     w.vision.update(dt);
     w.camera.update(dt);
+    this.shadows?.update();
+    this.outlines?.update(dt);
+    this.footprints?.update(dt);
     this.netsync?.update(time);
   }
 

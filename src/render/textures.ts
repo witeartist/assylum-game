@@ -3,7 +3,7 @@
 import Phaser from "phaser";
 import { GENERATED_INDEX, IMAGES } from "../data/assets";
 import { PLACEHOLDERS, drawPlaceholder, drawSolid } from "./placeholders";
-import { DECALS, SURFACES, WALL_FACE_ART, drawDust, drawShadow } from "./surfaces";
+import { DECALS, SURFACES, WALL_FACE_ART, drawClawprint, drawDust, drawFootprint, drawShadow } from "./surfaces";
 import { PROP_ART, furnitureBox } from "./props";
 import { FURNITURE } from "../data/furniture";
 import { DECAL_KEYS } from "../data/rooms";
@@ -56,6 +56,8 @@ export function finishImages(scene: Phaser.Scene): void {
   for (const f of FURNITURE) add(f.key, () => furnitureBox(f.key, f.w, f.h));
   add("fx/shadow", drawShadow);
   add("fx/dust", drawDust);
+  add("fx/footprint", drawFootprint);
+  add("fx/clawprint", drawClawprint);
   for (const a of IMAGES) {
     if (!tex.exists(a.key)) { tex.addCanvas(a.key, drawSolid(a.fallback ?? "#ff00ff")); continue; }
     if (!isGenerated(scene, a.key)) normalizeTexture(scene, a.key, !!a.trim);

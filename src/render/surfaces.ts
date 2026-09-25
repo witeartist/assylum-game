@@ -297,6 +297,25 @@ export function drawShadow(): HTMLCanvasElement {
   return c;
 }
 
+/** A shoe print, white (tinted when placed): the ball of the foot on top, the heel below. */
+export function drawFootprint(): HTMLCanvasElement {
+  const [c, ctx] = canvas(16, 32);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath(); ctx.ellipse(8, 10, 5.5, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(8, 25, 4.5, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+  return c;
+}
+
+/** A monster's print, white: a pad and three claws raking forward. */
+export function drawClawprint(): HTMLCanvasElement {
+  const [c, ctx] = canvas(24, 32);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath(); ctx.ellipse(12, 22, 7, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2.6; ctx.lineCap = "round";
+  for (const dx of [-6, 0, 6]) { ctx.beginPath(); ctx.moveTo(12 + dx * 0.8, 14); ctx.lineTo(12 + dx * 1.25, 3); ctx.stroke(); }
+  return c;
+}
+
 /** Dust mote: tiny soft dot. */
 export function drawDust(): HTMLCanvasElement {
   const [c, ctx] = canvas(16, 16);

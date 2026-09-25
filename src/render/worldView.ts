@@ -16,6 +16,7 @@ import { buildRoomLookup } from "../world/level";
 import { ARM_N, ARM_S, THIN, THIN_WALL, bands, faceRuns, wallMask, type WallMask } from "../world/walls";
 import { DEPTH } from "../ui/theme";
 import { SURFACES, WALL_FACE_ART } from "./surfaces";
+import { furnitureLayout } from "./propLayout";
 import { isPlaceholder } from "./textures";
 
 /** Chunk side in world px: few draw calls, a texture size every GPU supports. */
@@ -245,7 +246,9 @@ export class WorldView {
     this.drawCapEdges(mask);
 
     for (const f of level.furniture) {
-      placeStanding(scene, f.key, (f.col + f.w / 2) * TILE + sideHug(world, f.col, f.row, f.w, f.h), (f.row + f.h) * TILE - 1, f.w * TILE * 0.96);
+      const b = furnitureLayout(world, f);
+      const img = placeStanding(scene, f.key, b.x, b.base, b.w);
+      world.addProp(img, [{ x: b.x, y: b.base - 1 }, { x: b.foot.x0 + 1, y: b.base - 1 }, { x: b.foot.x1 - 1, y: b.base - 1 }, { x: b.x, y: b.foot.y0 + 1 }], f.solid);
     }
     this.buildDoors();
     this.buildLamps();
@@ -395,7 +398,7 @@ export class WorldView {
       const key = lamp.emergency ? LAMP_ART.emergency : lamp.flicker ? LAMP_ART.broken : LAMP_ART.normal;
       const width = lamp.emergency ? TILE * 0.55 : TILE * 1.3;
       const col = Math.floor(lamp.x / TILE), row = Math.floor(lamp.y / TILE);
-      if (row > 0 && level.rows[row - 1][col] === "#") placeStanding(scene, key, lamp.x, row * TILE - 1, width);
+      if (row > 0 && level.rows[row - 1][col] === "#") this.world.addProp(placeStanding(scene, key, lamp.x, row * TILE - 1, width), [{ x: lamp.x, y: row * TILE + 2 }]);
     }
   }
 }
