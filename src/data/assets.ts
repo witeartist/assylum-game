@@ -38,6 +38,3 @@ export const GENERATED_SURFACE_TILES_BY_KEY: Record<string, number> = {
   "surfaces/wall_face": 3,
 };
 
-export const MUSIC = {
-  main: "sound/Asylum%20Echoes.mp3",
-};

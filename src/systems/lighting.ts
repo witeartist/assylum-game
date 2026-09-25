@@ -48,6 +48,8 @@ export class Lighting {
   flickerStrength: number = FLICKER.calm;
   /** Every light this frame (rebuilt in update). */
   lights: FrameLight[] = [];
+  /** Every lamp this frame: where it hangs and how much of its usual light it gives (flicker dips). */
+  readonly lampLevels: { x: number; y: number; level: number }[] = [];
   private t = 0;
   private lamps: Lamp[];
   /** For each tile, the lamps that can shine on it (walls block them). */
@@ -167,7 +169,7 @@ export class Lighting {
     const boss = w.director.boss;
     const redness = w.director.bossSpawned ? BOSS_RED_TINT : 0;
     const dim = 1 - this.flicker * 3;
-    for (const lamp of this.lamps) {
+    this.lamps.forEach((lamp, i) => {
       const look = lamp.emergency ? LIGHTS.emergency : LIGHTS.lamp;
       let k = lamp.intensity * dim;
       const nearBoss = boss && boss.inPlay && dist(lamp, boss) < BOSS_DIM_RANGE;
@@ -178,7 +180,8 @@ export class Lighting {
       const c = look.color, e = LIGHTS.emergency.color;
       const color: RGB = [c[0] + (e[0] - c[0]) * redness, c[1] + (e[1] - c[1]) * redness, c[2] + (e[2] - c[2]) * redness];
       out.push(this.omni(lamp.x, lamp.y, look, lamp.radius / TILE, k, 0, color));
-    }
+      this.lampLevels[i] = { x: lamp.x, y: lamp.y, level: k / Math.max(0.01, lamp.intensity) };
+    });
     for (const d of w.doors.doors) if (!d.open) out.push(this.omni(d.terminal.x, d.terminal.y - 8, LIGHTS.terminal, LIGHTS.terminal.radius, 1 + 0.15 * Math.sin(this.t * 4)));
     const exit = w.objectives.exit;
     const exitLook = exit.open ? LIGHTS.exitOpen : LIGHTS.exitLocked;

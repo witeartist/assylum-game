@@ -157,6 +157,7 @@ export class Items {
       default: return false;
     }
     bag[slot] = null;
+    if (kind === "battery" || kind === "adrenaline") w.events.emit("itemUsed", { kind, by: a.id });
     return true;
   }
 
@@ -165,6 +166,7 @@ export class Items {
     const bag = this.bag(a), i = bag.indexOf("sedative");
     if (i < 0) return false;
     bag[i] = null;
+    this.world.events.emit("itemUsed", { kind: "sedative", by: a.id });
     return true;
   }
 

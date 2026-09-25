@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { CANVAS_W, CANVAS_H } from "../core/constants";
+import { audio } from "../core/audio";
 import { finishImages, loadArt, queueIndex } from "../render/textures";
 import { loadFonts } from "../ui/fonts";
 import { label, uiCamera } from "../ui/components";
@@ -12,12 +13,14 @@ export class BootScene extends Phaser.Scene {
     uiCamera(this);
     label(this, CANVAS_W / 2, CANVAS_H / 2, "ЗАГРУЗКА...", "h2", INK.title);
     queueIndex(this);
+    void audio.load();
   }
 
   async create(): Promise<void> {
     await loadArt(this);
     finishImages(this);
     await loadFonts();
+    await audio.load();
     this.scene.start("Menu");
   }
 }

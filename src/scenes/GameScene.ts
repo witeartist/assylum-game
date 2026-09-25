@@ -1,7 +1,6 @@
 // The round. Builds the world (level, actors, systems) and runs the systems each frame.
 import Phaser from "phaser";
 import { WORLD_W, WORLD_H } from "../core/constants";
-import { playMusic } from "../core/audio";
 import { randomSeed } from "../core/rng";
 import { CHARACTERS, RUNNER_IDS, type CharacterId } from "../data/characters";
 import { DIFFICULTIES, type DifficultyId } from "../data/difficulty";
@@ -19,6 +18,7 @@ import { addDust } from "../render/dust";
 import { Shadows } from "../render/shadows";
 import { Outlines } from "../render/outlines";
 import { Footprints } from "../render/footprints";
+import { Soundscape } from "../systems/sound";
 import { LIGHTING_PIPELINE, LightingPipeline } from "../render/lighting/LightingPipeline";
 import { Lighting } from "../systems/lighting";
 import { FoxFlash } from "../systems/foxFlash";
@@ -55,6 +55,7 @@ export class GameScene extends Phaser.Scene {
   private shadows: Shadows | null = null;
   private outlines: Outlines | null = null;
   private footprints: Footprints | null = null;
+  private soundscape: Soundscape | null = null;
   private failed = false;
 
   constructor() { super("Game"); }
@@ -66,6 +67,7 @@ export class GameScene extends Phaser.Scene {
     this.shadows = null;
     this.outlines = null;
     this.footprints = null;
+    this.soundscape = null;
     this.failed = false;
   }
 
@@ -77,7 +79,6 @@ export class GameScene extends Phaser.Scene {
     const net: NetMode = !start ? "solo" : session.isHost ? "host" : "client";
     const w = new World(this, level, diff, net);
 
-    playMusic();
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     w.camera = new CameraRig(this.cameras.main);
 
@@ -118,6 +119,7 @@ export class GameScene extends Phaser.Scene {
     w.interact = new Interact(w);
     this.outlines = new Outlines(w);
     w.vision = new Vision(w);
+    this.soundscape = new Soundscape(w);
     bindEffects(w);
     this.controls = new InputSystem(w);
     if (net !== "solo") this.netsync = new NetSync(w);
@@ -163,6 +165,7 @@ export class GameScene extends Phaser.Scene {
     this.shadows?.update();
     this.outlines?.update(dt);
     this.footprints?.update(dt);
+    this.soundscape?.update(dt);
     this.netsync?.update(time);
   }
 
@@ -178,6 +181,7 @@ export class GameScene extends Phaser.Scene {
 
   private dispose(): void {
     this.netsync?.dispose();
+    this.soundscape?.dispose();
     this.world?.events.clear();
     this.scene.stop("Hud");
   }

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { audio } from "../core/audio";
 import { CANVAS_W } from "../core/constants";
 import { CHARACTERS, BOSS_ID, isCharacterId } from "../data/characters";
 import { isDifficultyId } from "../data/difficulty";
@@ -26,6 +27,8 @@ export class ResultScene extends Phaser.Scene {
     uiCamera(this);
     const d = this.result, CX = CANVAS_W / 2;
     const view = VIEW[d.outcome] ?? VIEW.caught;
+    audio.playMusic(null);
+    audio.play(view.good ? "stingWin" : "stingLose");
     const hunter = d.outcome === "hunt-won" || d.outcome === "hunt-lost";
     const def = isCharacterId(d.character) ? CHARACTERS[d.character] : null;
 

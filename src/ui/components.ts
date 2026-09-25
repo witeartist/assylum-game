@@ -1,6 +1,7 @@
 // UI building blocks. Scenes assemble their screens only from these, so every button,
 // panel and message in the game looks and behaves the same.
 import Phaser from "phaser";
+import { audio } from "../core/audio";
 import { CANVAS_W, CANVAS_H } from "../core/constants";
 import type { EventBus } from "../core/events";
 import { RES } from "../render/display";
@@ -53,7 +54,7 @@ export class Button {
     this.text = label(scene, o.x, o.y, o.text, o.kind ?? "body");
     this.bg.on("pointerover", () => { this.hovered = true; this.paint(); });
     this.bg.on("pointerout", () => { this.hovered = false; this.paint(); });
-    this.bg.on("pointerdown", () => { if (this.enabled) o.onClick(); });
+    this.bg.on("pointerdown", () => { if (this.enabled) { audio.play("uiClick"); o.onClick(); } });
     this.paint();
   }
 
@@ -112,7 +113,7 @@ export class ToggleRow<T extends string> {
       const bx = x0 + i * (w + gap);
       const bg = scene.add.rectangle(bx, y, w, h, 0).setInteractive({ useHandCursor: true });
       this.texts.push(label(scene, bx, y, opt.label, o.kind ?? "small", INK.text));
-      bg.on("pointerdown", () => { this.value = opt.id; this.paint(); onChange(opt.id); });
+      bg.on("pointerdown", () => { audio.play("uiClick"); this.value = opt.id; this.paint(); onChange(opt.id); });
       this.bgs.push(bg);
     });
     this.paint();

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { audio } from "../core/audio";
 import { CANVAS_W } from "../core/constants";
 import { settings, updateSettings } from "../core/settings";
 import { CHARACTERS, PLAYABLE_IDS } from "../data/characters";
@@ -18,6 +19,7 @@ export class SelectScene extends Phaser.Scene {
 
   create(): void {
     uiCamera(this);
+    audio.playMusic("menuMusic");
     label(this, CANVAS_W / 2, 60, "ВЫБЕРИ ПЕРСОНАЖА", "h1", INK.title);
     label(this, CANVAS_W / 2, 100, "Собери ключи, почини питание и выберись. Тьма прячет всех — и тебя, и их.", "small", "#785a5a");
     difficultyToggles(this, 138, 30);

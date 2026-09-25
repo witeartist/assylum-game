@@ -46,6 +46,8 @@ export interface GameEvents {
   checkRequested: { index: number };
   brokeFree: { actor: Actor; by: string; remote: boolean };
   itemPicked: { index: number; by: string; remote: boolean };
+  /** An item used up on the spot (a battery, a syringe). */
+  itemUsed: { kind: ItemKind; by: string };
   /** A bottle or glowstick thrown from (x, y) to (tx, ty), or Yoko's whistle. */
   itemThrown: { kind: ItemKind | "whistle"; by: string; x: number; y: number; tx: number; ty: number; remote: boolean };
   fusePicked: { index: number; by: string; remote: boolean };

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { audio } from "../core/audio";
 import { CANVAS_W } from "../core/constants";
 import { settings } from "../core/settings";
 import { CHARACTERS, PLAYABLE_IDS, RUNNER_IDS, type CharacterId } from "../data/characters";
@@ -20,6 +21,7 @@ export class LobbyScene extends Phaser.Scene {
 
   create(): void {
     uiCamera(this);
+    audio.playMusic("menuMusic");
     this.mode = "choose";
     this.character = RUNNER_IDS[0];
     this.code = "";
