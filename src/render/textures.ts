@@ -6,6 +6,7 @@ import { PLACEHOLDERS, drawPlaceholder, drawSolid } from "./placeholders";
 import { DECALS, SURFACES, WALL_FACE_ART, drawClawprint, drawDust, drawFootprint, drawShadow } from "./surfaces";
 import { PROP_ART, furnitureBox } from "./props";
 import { FURNITURE } from "../data/furniture";
+import { CHARACTERS } from "../data/characters";
 import { DECAL_KEYS } from "../data/rooms";
 
 const MAX_TEXTURE = 2048;
@@ -62,6 +63,21 @@ export function finishImages(scene: Phaser.Scene): void {
     if (!tex.exists(a.key)) { tex.addCanvas(a.key, drawSolid(a.fallback ?? "#ff00ff")); continue; }
     if (!isGenerated(scene, a.key)) normalizeTexture(scene, a.key, !!a.trim);
   }
+  // Infected heroes whose art hasn't arrived: the healthy sprite, gone sickly.
+  for (const def of Object.values(CHARACTERS)) add(def.infected, () => drawInfected(tex.get(def.texture).getSourceImage() as HTMLImageElement | HTMLCanvasElement));
+}
+
+function drawInfected(src: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const ctx = c.getContext("2d")!;
+  ctx.filter = "saturate(0.3) brightness(0.72) contrast(1.2)";
+  ctx.drawImage(src, 0, 0);
+  ctx.filter = "none";
+  ctx.globalCompositeOperation = "source-atop";
+  ctx.fillStyle = "rgba(78, 128, 58, 0.38)";
+  ctx.fillRect(0, 0, c.width, c.height);
+  return c;
 }
 
 function isGenerated(scene: Phaser.Scene, key: string): boolean {

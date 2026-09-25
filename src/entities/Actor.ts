@@ -1,10 +1,11 @@
-// Every character on the map — the local player, runner bots, the hunter, the boss and
-// remote players — is an Actor. Behaviour comes from outside: input, a brain or the network.
+// Every character on the map — the local player, runner bots, the villain and remote players —
+// is an Actor. Behaviour comes from outside: input, a brain or the network. The villain is an
+// infected hero: the hero's `def`, the villain's `role` and `kit`, and an infected look.
 import Phaser from "phaser";
 import { TILE } from "../core/constants";
 import type { RunnerStatus, Role, Tile, Vec2 } from "../core/types";
-import type { CharacterDef } from "../data/characters";
-import { BATTERY, DEFAULT_FLASHLIGHT_MODE, EXHAUSTED_MULT, SNEAK_MULT, STAMINA } from "../data/balance";
+import { KITS, type CharacterDef, type KitId } from "../data/characters";
+import { BATTERY, DEFAULT_FLASHLIGHT_MODE, EXHAUSTED_MULT, SNEAK_MULT } from "../data/balance";
 import { DEPTH } from "../ui/theme";
 import { GAITS, NET_FLAG, type Gait, type NetState } from "./state";
 
@@ -21,11 +22,16 @@ export interface Brain {
 export interface ActorOptions {
   id: string;
   def: CharacterDef;
+  role: Role;
+  /** The villain's skill set (null for runners). */
+  kit: KitId | null;
   control: Control;
   pos: Vec2;
   /** Walking and running speed, px/s. */
   walk: number;
   run: number;
+  /** Seconds of running before exhaustion (runners by their ability). */
+  stamina: number;
 }
 
 const REMOTE_LERP = 0.3;
@@ -44,14 +50,18 @@ const SLIDE_RATE = 14;
 export class Actor extends Phaser.Physics.Arcade.Sprite {
   readonly id: string;
   readonly def: CharacterDef;
+  readonly role: Role;
+  readonly kit: KitId | null;
   readonly control: Control;
   readonly view: Phaser.GameObjects.Sprite;
   readonly shadow: Phaser.GameObjects.Image;
+  /** On-screen height of the figure, px (infected heroes stand taller). Not `height`: Phaser's own. */
+  readonly figureHeight: number;
   status: RunnerStatus = "alive";
   hiding = false;
   walkSpeed: number;
   runSpeed: number;
-  /** Temporary multiplier on every gait (the hunter speeds up when the boss wakes). */
+  /** Temporary multiplier on every gait (villains speed up when the building wakes). */
   speedMul = 1;
   gait: Gait = "walk";
   /** Stamina in seconds of running; see STAMINA. */
@@ -67,6 +77,8 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   readonly flashlight = { on: false, mode: DEFAULT_FLASHLIGHT_MODE, charge: BATTERY.start };
   /** Grabs this runner can still break free from (ability + sedatives). */
   breakFree = 0;
+  /** Seconds the flashlight won't light (a roar made it die). */
+  lightJam = 0;
   /** Seconds the actor is stunned (a runner broke free from it). */
   stunned = 0;
   /** Remote actors: flags from the network (NET_FLAG). */
@@ -90,37 +102,45 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   private readonly footOffset: number;
 
   constructor(scene: Phaser.Scene, o: ActorOptions) {
-    super(scene, o.pos.x, o.pos.y, o.def.texture);
+    const kit = o.kit ? KITS[o.kit] : null;
+    const look = kit ? { texture: o.def.infected, height: o.def.height * kit.heightMul, body: kit.body } : o.def;
+    super(scene, o.pos.x, o.pos.y, look.texture);
     this.id = o.id;
     this.def = o.def;
+    this.role = o.role;
+    this.kit = o.kit;
     this.control = o.control;
+    this.figureHeight = look.height;
     this.walkSpeed = o.walk;
     this.runSpeed = o.run;
-    this.staminaMax = STAMINA.max * (o.def.ability?.stamina ?? 1);
+    this.staminaMax = o.stamina;
     this.stamina = this.staminaMax;
-    this.breakFree = o.def.ability?.breakFree ?? 0;
+    this.breakFree = o.role === "runner" ? o.def.ability?.breakFree ?? 0 : 0;
     this.prevX = o.pos.x;
     this.prevY = o.pos.y;
     scene.add.existing(this);
-    const scale = o.def.height / this.frame.height;
+    const scale = look.height / this.frame.height;
     this.setScale(scale).setVisible(false);
-    this.footOffset = o.def.body * 0.3;
-    this.view = scene.add.sprite(o.pos.x, o.pos.y, o.def.texture).setOrigin(0.5, 1).setScale(scale);
+    this.footOffset = look.body * 0.3;
+    this.view = scene.add.sprite(o.pos.x, o.pos.y, look.texture).setOrigin(0.5, 1).setScale(scale);
     this.shadow = scene.add.image(o.pos.x, o.pos.y, "fx/shadow").setDepth(DEPTH.shadows).setAlpha(0.8);
-    this.shadow.setDisplaySize(o.def.body * 1.6, o.def.body * 0.7);
+    this.shadow.setDisplaySize(look.body * 1.6, look.body * 0.7);
     if (o.control === "remote") {
       this.net = { x: o.pos.x, y: o.pos.y, vx: 0, vy: 0, a: this.facing, fl: 0, g: 1, k: 0 };
       this.netTarget = { x: o.pos.x, y: o.pos.y };
     } else {
       scene.physics.add.existing(this);
       // The arcade body multiplies its size by the sprite scale, so compensate.
-      this.arcadeBody!.setSize(o.def.body / scale, o.def.body / scale);
+      this.arcadeBody!.setSize(look.body / scale, look.body / scale);
       this.setCollideWorldBounds(true);
     }
     this.syncView(0);
   }
 
-  get role(): Role { return this.def.role; }
+  /** Name over the head and in messages: the hero, or the infected hero and its kit. */
+  get displayName(): string { return this.kit ? this.def.name + " · " + KITS[this.kit].name : this.def.name; }
+  /** Signature color: the hero's, or the kit's for the villain. */
+  get nameColor(): string { return this.kit ? KITS[this.kit].color : this.def.color; }
   /** Where the character stands (bottom of the sprite, its depth-sort line). */
   get feetY(): number { return this.y + this.footOffset; }
   /** Drawn on screen right now. */
@@ -143,6 +163,9 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     const v = g === "sneak" ? this.walkSpeed * SNEAK_MULT : g === "run" && !this.exhausted ? this.runSpeed : walk;
     return this.stunned > 0 ? 0 : v * this.speedMul;
   }
+
+  /** The flashlight is switched on and shining (a roar makes it die for a moment). */
+  get beamOn(): boolean { return this.flashlight.on && this.lightJam <= 0; }
 
   /** Can start or keep running. */
   get canRun(): boolean { return !this.exhausted && (this.stamina > 0 || this.adrenaline > 0); }
@@ -274,7 +297,7 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     const v = this.velocity;
     const p = this.authPos;
     return {
-      x: p.x, y: p.y, vx: v.x, vy: v.y, a: this.facing, fl: this.flashlight.on ? this.flashlight.mode : 0,
+      x: p.x, y: p.y, vx: v.x, vy: v.y, a: this.facing, fl: this.beamOn ? this.flashlight.mode : 0,
       g: GAITS.indexOf(this.gait), k: this.flags(extraFlags),
     };
   }

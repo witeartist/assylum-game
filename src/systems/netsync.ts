@@ -1,10 +1,13 @@
 // Multiplayer glue: turns local events into messages and incoming messages into the same
 // system calls (flagged `remote`, so they are not sent back). Clients report to the host,
-// the host applies, relays and decides catches, searches and the end of the round.
+// the host applies, relays and decides catches, searches and the end of the round. When the
+// villain's player leaves, the host's AI takes the villain over.
 import type { GameMessage } from "../net/protocol";
 import { session } from "../net/session";
+import { WAKE } from "../data/balance";
 import type { Actor } from "../entities/Actor";
 import { NET_FLAG } from "../entities/state";
+import { VILLAIN_AI_ID, spawnVillainAI } from "../game/spawn";
 import type { World } from "../game/World";
 
 const SEND_INTERVAL = 33;
@@ -28,15 +31,16 @@ export class NetSync {
     on(ev.on("fusePicked", e => { if (!e.remote) this.send({ type: "fuse", op: "pick", index: e.index, by: e.by }); }));
     on(ev.on("fuseInserted", e => { if (!e.remote) this.send({ type: "fuse", op: "insert", index: e.index, by: e.by }); }));
     on(ev.on("noiseMade", e => this.send({ type: "noise", x: e.x, y: e.y, r: e.radius, kind: e.kind, by: e.by })));
+    on(ev.on("abilityUsed", e => { if (!e.remote) this.send({ type: "ability", by: e.by, x: e.x, y: e.y }); }));
     if (host) {
       on(ev.on("runnerCaught", e => this.send({ type: "caught", id: e.actor.id, by: e.by })));
       on(ev.on("brokeFree", e => { if (!e.remote) this.send({ type: "freed", id: e.actor.id, by: e.by }); }));
       on(ev.on("fuseDropped", e => this.send({ type: "fuseDrop", index: e.index, x: e.x, y: e.y })));
       on(ev.on("spotChecked", e => this.send({ type: "check", index: e.index, by: e.by })));
-      on(ev.on("bossSpawned", () => this.send({ type: "boss" })));
+      on(ev.on("buildingAwake", () => this.send({ type: "wake" })));
       on(ev.on("runnerLeft", e => this.send({ type: "left", id: e.actor.id })));
       on(ev.on("roundResults", e => this.send({ type: "end", results: e.results })));
-      on(session.events.on("peerLeft", id => { const a = world.byId(id); if (a) world.round.leave(a); }));
+      on(session.events.on("peerLeft", id => { const a = world.byId(id); if (a) this.left(a); }));
     } else {
       on(ev.on("checkRequested", e => this.send({ type: "check", index: e.index, by: world.local.id })));
       on(session.events.on("hostLost", () => world.round.abort("Связь с хостом потеряна")));
@@ -45,6 +49,18 @@ export class NetSync {
   }
 
   private send(msg: GameMessage): void { session.send(msg); }
+
+  /** Host: a player left. If it was the last villain, the AI carries on in its place. */
+  private left(a: Actor): void {
+    const w = this.world;
+    w.round.leave(a);
+    if (!a.kit || w.threats().length > 0 || w.byId(VILLAIN_AI_ID)) return;
+    const ai = spawnVillainAI(w, a.def.id, a.kit);
+    ai.teleport(a.authPos);
+    if (w.director.awake) ai.speedMul = WAKE.boost;
+    this.send({ type: "ai", character: a.def.id, kit: a.kit, x: ai.x, y: ai.y });
+    w.toast("Злодея теперь ведёт компьютер", "warn");
+  }
 
   /** Flags other peers need about an actor simulated here (sedative in the bag, a fuse in the hands). */
   private flags(a: Actor): number {
@@ -144,9 +160,21 @@ export class NetSync {
         if (a) w.round.catchRunner(a, msg.by, true);
         break;
       }
-      case "boss":
-        if (!host) w.director.spawnBoss(true);
+      case "wake":
+        if (!host) w.director.wake(true);
         break;
+      case "ability": {
+        const a = actor(msg.by);
+        if (a) w.abilities.use(a, true, { x: msg.x, y: msg.y });
+        relay();
+        break;
+      }
+      case "ai": {
+        if (host || w.byId(VILLAIN_AI_ID)) break;
+        spawnVillainAI(w, msg.character, msg.kit).teleport({ x: msg.x, y: msg.y });
+        w.toast("Злодея теперь ведёт компьютер", "warn");
+        break;
+      }
       case "left": {
         const a = !host ? w.byId(msg.id) : undefined;
         if (a) w.round.leave(a);

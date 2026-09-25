@@ -1,9 +1,11 @@
 // Runner bot. Splits the work with the other bots (each goes for a goal nobody else claimed):
 // keys, fuses to the fuse box, terminals, then the exit. It walks — quietly — and keeps away from
 // where it saw or heard a monster; when one comes for it, it runs, and when it is out of breath
-// it hides and holds its breath. It lights the flashlight only when nothing is around.
+// it hides and holds its breath. A brute follows the scent to the locker, so from a brute it
+// never hides: it keeps walking away, as soon as it hears the heavy steps. It lights the
+// flashlight only when nothing is around.
 import { TILE } from "../core/constants";
-import { dist, tileIndex, worldToTile } from "../core/geom";
+import { dist, manhattan, tileIndex, worldToTile } from "../core/geom";
 import type { Tile, Vec2 } from "../core/types";
 import { BOT_DANGER_RANGE, LOCKER_RANGE } from "../data/balance";
 import type { Actor, Brain } from "../entities/Actor";
@@ -16,8 +18,12 @@ import type { HideSpot } from "../systems/hiding";
 
 type State = "goal" | "flee" | "hide" | "hack" | "insert" | "explore";
 
-/** A monster the bot saw or heard: where and when. */
-interface Sighting extends Vec2 { t: number; seen: boolean; }
+/** A monster the bot saw or heard: where and when, and whether it is a brute. */
+interface Sighting extends Vec2 { t: number; seen: boolean; brute: boolean; }
+/** How close a monster it only heard makes it run, tiles (a brute: as soon as it is this close). */
+const HEARD_FLEE = { other: 3.5, brute: 8 };
+
+interface Danger { d: number; seen: boolean; brute: boolean; at: Vec2; }
 
 const SEPARATION_DIST = 18;
 const SEPARATION_PUSH = 40;
@@ -34,6 +40,8 @@ export class RunnerBot implements Brain {
   private hideSpot: HideSpot | null = null;
   private hideLeft = 0;
   private dest: Tile | null = null;
+  /** Where it runs to while fleeing: kept while it still leads away, so it doesn't dither. */
+  private escape: Tile | null = null;
   /** When a monster was last noticed (seen or heard). */
   private lastScare = -999;
 
@@ -51,9 +59,11 @@ export class RunnerBot implements Brain {
     if (a.hiding) { this.stayHidden(dt, danger); return; }
     this.useItems(danger);
 
-    const scared = danger && (danger.seen ? danger.d < TILE * 7 : danger.d < TILE * 3.5);
-    if (scared && this.state !== "hide") this.state = "flee";
-    else if (this.state === "flee" && !scared) this.replanSoon();
+    const scared = danger && (danger.seen ? danger.d < TILE * 7 : danger.d < TILE * (danger.brute ? HEARD_FLEE.brute : HEARD_FLEE.other));
+    if (scared && this.state !== "hide") {
+      if (this.state !== "flee") this.escape = null;
+      this.state = "flee";
+    } else if (this.state === "flee" && !scared) this.replanSoon();
 
     switch (this.state) {
       case "flee": this.flee(dt, danger!); break;
@@ -78,40 +88,41 @@ export class RunnerBot implements Brain {
     for (const m of w.threats()) {
       const p = m.authPos, d = dist(a, p);
       if (d > BOT_DANGER_RANGE || !hasLineOfSight(w.sight, a, p)) continue;
-      if (d < TILE * 3 || w.lighting.isLit(p) || inBeam(a, p)) this.remember(p, true);
+      if (d < TILE * 3 || w.lighting.isLit(p) || inBeam(a, p)) this.remember(p, true, m.kit === "brute");
     }
     for (const e of w.noise.since(this.lastNoise)) {
-      if (e.kind === "monster" && w.noise.hears(a, e)) this.remember(e, false);
+      if (e.kind === "monster" && w.noise.hears(a, e)) this.remember(e, false, e.source?.kit === "brute");
     }
     this.lastNoise = w.noise.lastId;
     this.sightings = this.sightings.filter(s => this.t - s.t < REMEMBER);
   }
 
-  private remember(p: Vec2, seen: boolean): void {
+  private remember(p: Vec2, seen: boolean, brute: boolean): void {
     this.lastScare = this.t;
     const near = this.sightings.find(s => dist(s, p) < TILE * 2);
-    if (near) { near.x = p.x; near.y = p.y; near.t = this.t; near.seen = near.seen || seen; }
-    else this.sightings.push({ x: p.x, y: p.y, t: this.t, seen });
+    if (near) { near.x = p.x; near.y = p.y; near.t = this.t; near.seen = near.seen || seen; near.brute = near.brute || brute; }
+    else this.sightings.push({ x: p.x, y: p.y, t: this.t, seen, brute });
   }
 
-  /** The closest recent sighting: how far, and whether it was seen just now. */
-  private danger(): { d: number; seen: boolean; at: Vec2 } | null {
-    let best: { d: number; seen: boolean; at: Vec2 } | null = null;
+  /** The closest recent sighting: how far, whether it was seen just now, whether it is a brute. */
+  private danger(): Danger | null {
+    let best: Danger | null = null;
     for (const s of this.sightings) {
       if (this.t - s.t > 4) continue;
       const d = dist(this.actor, s);
-      if (!best || d < best.d) best = { d, seen: s.seen && this.t - s.t < 1, at: s };
+      if (!best || d < best.d) best = { d, seen: s.seen && this.t - s.t < 1, brute: s.brute, at: s };
     }
     return best;
   }
 
   // ── Behaviour ──
 
-  private pursueGoal(dt: number, danger: { d: number } | null): void {
+  private pursueGoal(dt: number, danger: Danger | null): void {
     const w = this.world, a = this.actor;
     a.pathTimer -= dt;
     if (a.pathTimer <= 0 || a.path.length === 0) this.replan();
-    a.gait = danger && danger.d < TILE * 9 ? "sneak" : "walk";
+    // Sneaking hides your steps — useless against a nose.
+    a.gait = danger && danger.d < TILE * 9 && !danger.brute ? "sneak" : "walk";
     if (!w.gates.aiPass(a, dt)) a.followPath(a.gaitSpeed(), dt);
     // Arrived at a terminal or at the fuse box?
     const g = this.goal;
@@ -156,10 +167,10 @@ export class RunnerBot implements Brain {
    * Run away from the monster. Out of its sight (or out of breath) with a hiding spot close by —
    * slip in: a monster that didn't see you get in has to guess.
    */
-  private flee(dt: number, danger: { d: number; seen: boolean; at: Vec2 }): void {
+  private flee(dt: number, danger: Danger): void {
     const w = this.world, a = this.actor;
     const tired = a.exhausted || a.stamina < a.staminaMax * 0.25;
-    if ((tired || !danger.seen) && danger.d > TILE * 2.5 && a.pathTimer <= 0.05) {
+    if ((tired || !danger.seen) && !danger.brute && danger.d > TILE * 2.5 && a.pathTimer <= 0.05) {
       const spot = this.freeSpotNear(TILE * (tired ? 5 : 4));
       if (spot && (tired || w.rng.chance(0.7))) { this.hideSpot = spot; this.state = "hide"; this.dest = null; return; }
     }
@@ -167,7 +178,12 @@ export class RunnerBot implements Brain {
     if (a.pathTimer <= 0 || a.path.length === 0) {
       const here = worldToTile(a);
       const threats = this.sightings.filter(s => this.t - s.t < 4).map(s => worldToTile(s));
-      a.path = this.route(here, chooseEscapeTile(w.rng, w.level, here, threats));
+      // A new place to run to only when there, or when the monster is as close to it as we are.
+      const e = this.escape;
+      if (!e || a.path.length === 0 || threats.some(t => manhattan(t, e) <= manhattan(here, e))) {
+        this.escape = chooseEscapeTile(w.rng, w.level, here, threats);
+      }
+      a.path = this.route(here, this.escape!);
       a.pathTimer = 0.6;
     }
     a.gait = a.canRun ? "run" : "walk";
@@ -191,10 +207,14 @@ export class RunnerBot implements Brain {
     if (!w.gates.aiPass(a, dt)) a.followPath(a.gaitSpeed(), dt);
   }
 
-  /** In a hiding spot: wait until the monster has been gone for a while. */
-  private stayHidden(dt: number, danger: { d: number } | null): void {
+  /**
+   * In a hiding spot: wait until the monster has been gone for a while. A brute coming along the
+   * scent makes the spot a trap: get out while it is still some way off.
+   */
+  private stayHidden(dt: number, danger: Danger | null): void {
     this.hideLeft -= dt;
-    if (danger && danger.d < TILE * 10) this.hideLeft = Math.max(this.hideLeft, 4);
+    if (danger?.brute && danger.d > TILE * 2.5) this.hideLeft = 0;
+    else if (danger && danger.d < TILE * 10) this.hideLeft = Math.max(this.hideLeft, 4);
     if (this.hideLeft > 0) return;
     this.world.hiding.set(this.actor, false);
     this.hideSpot = null;

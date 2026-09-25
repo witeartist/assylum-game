@@ -74,7 +74,7 @@ export class Objectives {
     k.sprite.destroy();
     this.collected++;
     const local = by === w.local;
-    const byName = typeof by === "string" ? by : by ? by.def.name : null;
+    const byName = typeof by === "string" ? by : by ? by.displayName : null;
     w.events.emit("keyCollected", { index, by: byName, local, remote });
     if (!this.tryOpenExit()) {
       const more = this.collected >= this.total ? " — нужно питание: предохранители в щиток" : "";

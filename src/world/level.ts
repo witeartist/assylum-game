@@ -39,10 +39,10 @@ export interface LevelData {
   rows: string[];
   rooms: Room[];
   playerSpawn: Tile;
-  foxSpawn: Tile;
+  /** Where villains start, far from the runners: the first villain, then a second one. */
+  villainSpawns: Tile[];
   npcSpawns: Tile[];
   exitTile: Tile;
-  bossSpawn: Tile;
   keyTiles: Tile[];
   furniture: FurniturePiece[];
   hidingSpots: Tile[];

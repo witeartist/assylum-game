@@ -11,8 +11,10 @@ export const LIGHTS = {
   spill:      { color: [1.0, 0.9, 0.72],   intensity: 0.4, radius: 1.4 },
   /** Eyes used to the dark: a small circle around the local runner (only the viewer sees it). */
   personal:   { color: [0.42, 0.48, 0.62], intensity: 0.5, radius: 2.2 },
-  /** The hunter sees in the dark further (only the viewer sees it). */
+  /** The fox sees in the dark further (only the viewer sees it). */
   hunterEyes: { color: [0.95, 0.55, 0.5],  intensity: 0.7, radius: 5.2 },
+  /** The brute goes by smell more than by sight: a dimmer, shorter glow. */
+  bruteEyes:  { color: [0.6, 0.85, 0.5],   intensity: 0.55, radius: 3.4 },
   glowstick:  { color: [0.35, 1.0, 0.45],  intensity: 0.85, radius: 3 },
   /** A fuse lying on the floor gives off a faint electric glint. */
   fuse:       { color: [0.45, 0.8, 1.0],   intensity: 0.45, radius: 1.1 },
@@ -26,5 +28,5 @@ export const LIGHTS = {
 /** Share of lamps that are red emergency lights, and of lamps that flicker. */
 export const EMERGENCY_SHARE = 0.15;
 export const FLICKER_SHARE = 0.25;
-/** After the boss wakes, every lamp is tinted this much towards emergency red. */
-export const BOSS_RED_TINT = 0.45;
+/** After the building wakes, every lamp is tinted this much towards emergency red. */
+export const AWAKE_RED_TINT = 0.45;

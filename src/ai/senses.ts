@@ -21,7 +21,7 @@ export interface SightSpec {
 
 /** `holder`'s flashlight beam reaches `p`. */
 export function inBeam(holder: Actor, p: Vec2): boolean {
-  if (!holder.flashlight.on) return false;
+  if (!holder.beamOn) return false;
   const mode = FLASHLIGHT_MODES[holder.flashlight.mode - 1];
   const d = dist(holder, p);
   if (d > mode.rangeTiles * 32 || d < 1) return false;
@@ -39,5 +39,5 @@ export function sees(world: World, me: Actor, r: Actor, s: SightSpec, evenHidden
   if (!hasLineOfSight(world.sight, me, p)) return false;
   if (near || shining) return true;
   if (d <= s.dark * (r.def.ability?.darkStealth ?? 1)) return true;
-  return r.flashlight.on || world.lighting.isLit(p);
+  return r.beamOn || world.lighting.isLit(p);
 }

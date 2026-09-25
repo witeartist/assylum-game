@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { RoundTally, decideRoundEnd, outcomeFor } from "../src/game/roundRules";
+import { RoundTally, decideRoundEnd, outcomeFor, pickVillains } from "../src/game/roundRules";
+import type { PlayerInfo } from "../src/net/protocol";
+import type { CharacterId, KitId } from "../src/data/characters";
 
 describe("round tally", () => {
   it("never overwrites a final result", () => {
@@ -47,5 +49,39 @@ describe("end of round", () => {
     expect(outcomeFor("hunter", null, { ...c, caught: 2, escaped: 3 })).toBe("hunt-lost");
     expect(outcomeFor("runner", "escaped", c)).toBe("escaped");
     expect(outcomeFor("runner", "caught", c)).toBe("caught");
+  });
+});
+
+describe("who is the villain", () => {
+  const heroes: CharacterId[] = ["Naumi", "Kuruna", "Wite", "Sumrak", "Yoko"];
+  const room = (wishes: (KitId | null)[]): Record<string, PlayerInfo> =>
+    Object.fromEntries(wishes.map((villain, i) => ["p" + i, { character: heroes[i], ready: true, villain }]));
+  /** A fixed sequence of "random" numbers. */
+  const seq = (...xs: number[]) => { let i = 0; return () => xs[i++ % xs.length]; };
+
+  it("a volunteer gets the part with the kit they asked for", () => {
+    const r = pickVillains(room([null, "brute", null]), seq(0.3));
+    expect(r.villains).toEqual({ p1: "brute" });
+    expect(r.aiVillain).toBeNull();
+  });
+
+  it("among several volunteers only one is picked (two in a room of five)", () => {
+    expect(Object.keys(pickVillains(room(["fox", "brute", null]), seq(0.9, 0.1)).villains)).toHaveLength(1);
+    const full = pickVillains(room(["fox", "brute", null, "fox", null]), seq(0.5, 0.2, 0.8));
+    expect(Object.keys(full.villains)).toHaveLength(2);
+    for (const [id, kit] of Object.entries(full.villains)) expect(kit).toBe(room(["fox", "brute", null, "fox", null])[id].villain);
+    // Five players, one volunteer: nobody is drafted as the second villain.
+    expect(Object.keys(pickVillains(room([null, null, "fox", null, null]), seq(0.5)).villains)).toEqual(["p2"]);
+  });
+
+  it("nobody asked: someone is drafted, with a random kit", () => {
+    const r = pickVillains(room([null, null, null]), seq(0.99, 0.2));
+    expect(r.villains).toEqual({ p2: "fox" });
+  });
+
+  it("a lone player runs from the AI, played by another hero", () => {
+    const r = pickVillains(room([null]), seq(0));
+    expect(r.villains).toEqual({});
+    expect(r.aiVillain?.character).not.toBe("Naumi");
   });
 });

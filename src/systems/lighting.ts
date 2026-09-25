@@ -1,11 +1,12 @@
 // One light model for both the picture and the AI. Every light of the frame — lamps, flashlights,
-// glowsticks, the hunter's flash, glowing objects — is collected once; the renderer draws them and
-// `lightAt` answers "is this spot lit?" for vision and AI with the same numbers.
+// glowsticks, the fox's flash, glowing objects — is collected once; the renderer draws them and
+// `lightAt` answers "is this spot lit?" for vision and AI with the same numbers. Lamps stutter
+// around a brute, and once the building wakes they turn red and many die, one by one.
 import { MAP_W, MAP_H, TILE } from "../core/constants";
 import { dist, tileCenter, tileIndex, worldToTile } from "../core/geom";
 import type { Vec2 } from "../core/types";
-import { FLASHLIGHT_MODES, FLICKER, FOX_FLASH, SEE_LIGHT } from "../data/balance";
-import { BOSS_RED_TINT, EMERGENCY_SHARE, FLICKER_SHARE, LIGHTS, type LightLook, type RGB } from "../data/lights";
+import { FLASHLIGHT_MODES, FLICKER, FOX_FLASH, SEE_LIGHT, WAKE } from "../data/balance";
+import { AWAKE_RED_TINT, EMERGENCY_SHARE, FLICKER_SHARE, LIGHTS, type LightLook, type RGB } from "../data/lights";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import { hasLineOfSight } from "../world/grid";
@@ -20,10 +21,16 @@ export interface FrameLight {
   dirX: number; dirY: number; cosOuter: number; cosInner: number;
 }
 
-interface Lamp { x: number; y: number; radius: number; intensity: number; emergency: boolean; flicker: boolean; seed: number; }
+interface Lamp {
+  x: number; y: number; radius: number; intensity: number; emergency: boolean; flicker: boolean; seed: number;
+  /** Seconds after the building wakes when this lamp dies (Infinity: it never does). */
+  dieAt: number;
+}
 
-/** Lamps closer than this to the boss stutter and die down — the warning that it is near. */
-const BOSS_DIM_RANGE = TILE * 7;
+/** Lamps closer than this to a brute stutter and die down — the warning that it is near. */
+const BRUTE_DIM_RANGE = TILE * 7;
+/** A dying lamp sputters this long before it goes out, seconds. */
+const DYING = 1.6;
 
 /** Stable pseudo-random number for a lamp, the same on every peer. */
 function lampHash(col: number, row: number): number {
@@ -48,8 +55,8 @@ export class Lighting {
   flickerStrength: number = FLICKER.calm;
   /** Every light this frame (rebuilt in update). */
   lights: FrameLight[] = [];
-  /** Every lamp this frame: where it hangs and how much of its usual light it gives (flicker dips). */
-  readonly lampLevels: { x: number; y: number; level: number }[] = [];
+  /** Every lamp this frame: where it hangs, how much of its usual light it gives (flicker dips), dead for good. */
+  readonly lampLevels: { x: number; y: number; level: number; dead: boolean }[] = [];
   private t = 0;
   private lamps: Lamp[];
   /** For each tile, the lamps that can shine on it (walls block them). */
@@ -58,7 +65,10 @@ export class Lighting {
   constructor(private world: World) {
     this.lamps = world.level.lights.map(l => {
       const h = lampHash(l.col, l.row), p = tileCenter(l);
-      return { x: p.x, y: p.y, radius: l.radius * TILE, intensity: l.intensity, emergency: h < EMERGENCY_SHARE, flicker: h > 1 - FLICKER_SHARE, seed: h * 100 };
+      // The order the lamps die in is fixed by the level, so every peer loses the same ones.
+      const order = lampHash(l.col + 71.3, l.row + 19.1), emergency = h < EMERGENCY_SHARE;
+      const dieAt = !emergency && order < WAKE.share ? order / WAKE.share * WAKE.over : Infinity;
+      return { x: p.x, y: p.y, radius: l.radius * TILE, intensity: l.intensity, emergency, flicker: h > 1 - FLICKER_SHARE, seed: h * 100, dieAt };
     });
     this.lampsFor = Array.from({ length: MAP_W * MAP_H }, () => []);
     this.bakeLamps();
@@ -128,13 +138,13 @@ export class Lighting {
 
   /** A runner the hunter can spot from afar: lit, or holding a burning flashlight. */
   isExposed(a: Actor): boolean {
-    return a.flashlight.on || this.isLit(a.authPos);
+    return a.beamOn || this.isLit(a.authPos);
   }
 
   /** Every light that can touch the view rect, most important first, plus the viewer's own. */
   frameLights(view: { x: number; y: number; width: number; height: number }, viewer: Actor, max: number): FrameLight[] {
     const w = this.world;
-    const own = w.local.role === "hunter" && viewer === w.local ? LIGHTS.hunterEyes : LIGHTS.personal;
+    const me = w.local, own = me.kit && viewer === me ? (me.kit === "brute" ? LIGHTS.bruteEyes : LIGHTS.hunterEyes) : LIGHTS.personal;
     const out: FrameLight[] = [this.omni(viewer.x, viewer.y, own, own.radius ?? 1, 1)];
     const cx = view.x + view.width / 2, cy = view.y + view.height / 2;
     const visible = this.lights.filter(l =>
@@ -162,25 +172,28 @@ export class Lighting {
       });
       out.push(this.omni(a.x, a.y, LIGHTS.spill, LIGHTS.spill.radius, k));
     }
-    const flash = w.foxFlash;
-    if (flash.active) out.push(this.omni(flash.x, flash.y, LIGHTS.foxFlash, FOX_FLASH.radiusTiles, 1));
+    for (const f of w.abilities.flashes) out.push(this.omni(f.x, f.y, LIGHTS.foxFlash, FOX_FLASH.radiusTiles, 1));
     for (const g of w.items.glowLights()) out.push(this.omni(g.x, g.y, LIGHTS.glowstick, LIGHTS.glowstick.radius, g.strength));
 
-    const boss = w.director.boss;
-    const redness = w.director.bossSpawned ? BOSS_RED_TINT : 0;
+    const brutes = w.threats().filter(a => a.kit === "brute");
+    const awake = w.director.awake, redness = awake ? AWAKE_RED_TINT : 0;
     const dim = 1 - this.flicker * 3;
     this.lamps.forEach((lamp, i) => {
       const look = lamp.emergency ? LIGHTS.emergency : LIGHTS.lamp;
+      const dying = awake ? w.director.awakeFor - lamp.dieAt : -1;
+      if (dying >= DYING) { this.lampLevels[i] = { x: lamp.x, y: lamp.y, level: 0, dead: true }; return; }
       let k = lamp.intensity * dim;
-      const nearBoss = boss && boss.inPlay && dist(lamp, boss) < BOSS_DIM_RANGE;
-      if (lamp.flicker || nearBoss) {
-        const f = Math.sin(this.t * (nearBoss ? 23 : 13) + lamp.seed) * Math.sin(this.t * 7.7 + lamp.seed * 2);
-        k *= f > (nearBoss ? 0.2 : 0.82) ? 0.12 : 0.85 + 0.15 * f;
+      const choking = dying >= 0 || brutes.some(b => dist(lamp, b) < BRUTE_DIM_RANGE);
+      if (lamp.flicker || choking) {
+        const f = Math.sin(this.t * (choking ? 23 : 13) + lamp.seed) * Math.sin(this.t * 7.7 + lamp.seed * 2);
+        k *= f > (choking ? 0.2 : 0.82) ? 0.12 : 0.85 + 0.15 * f;
       }
+      // Its last moments: the sputter fades out.
+      if (dying >= 0) k *= 1 - dying / DYING;
       const c = look.color, e = LIGHTS.emergency.color;
       const color: RGB = [c[0] + (e[0] - c[0]) * redness, c[1] + (e[1] - c[1]) * redness, c[2] + (e[2] - c[2]) * redness];
       out.push(this.omni(lamp.x, lamp.y, look, lamp.radius / TILE, k, 0, color));
-      this.lampLevels[i] = { x: lamp.x, y: lamp.y, level: k / Math.max(0.01, lamp.intensity) };
+      this.lampLevels[i] = { x: lamp.x, y: lamp.y, level: k / Math.max(0.01, lamp.intensity), dead: false };
     });
     for (const d of w.doors.doors) if (!d.open) out.push(this.omni(d.terminal.x, d.terminal.y - 8, LIGHTS.terminal, LIGHTS.terminal.radius, 1 + 0.15 * Math.sin(this.t * 4)));
     const exit = w.objectives.exit;

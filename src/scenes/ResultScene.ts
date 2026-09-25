@@ -1,11 +1,12 @@
 import Phaser from "phaser";
 import { audio } from "../core/audio";
 import { CANVAS_W } from "../core/constants";
-import { CHARACTERS, BOSS_ID, isCharacterId } from "../data/characters";
+import { CHARACTERS, HERO_IDS, isCharacterId } from "../data/characters";
 import { isDifficultyId } from "../data/difficulty";
 import { settings } from "../core/settings";
 import type { Outcome } from "../game/roundRules";
 import type { ResultData } from "../systems/round";
+import type { GameSceneData } from "./GameScene";
 import { button, label, portrait, uiCamera } from "../ui/components";
 import { INK, TONES, type Tone } from "../ui/theme";
 
@@ -34,7 +35,7 @@ export class ResultScene extends Phaser.Scene {
 
     label(this, CX, 130, view.title, "display", view.tone === "blood" ? INK.title : TONES[view.tone].ink);
     if (def) {
-      const img = portrait(this, CX, 222, def.texture, 72);
+      const img = portrait(this, CX, 222, hunter ? def.infected : def.texture, 72);
       if (!view.good) img.setTint(0x505050);
       label(this, CX, 272, def.name, "h2", def.color);
     }
@@ -46,15 +47,14 @@ export class ResultScene extends Phaser.Scene {
       ? "Поймано: " + d.caught + "/" + d.total + "  ·  Сбежали: " + d.escaped
       : "Спасены: " + d.escaped + "/" + d.total);
     lines.push("Время: " + Math.floor(d.elapsed / 60) + "м " + (d.elapsed % 60) + "с");
-    if (d.outcome === "escaped" && d.bossSpawned) lines.push("✓ " + CHARACTERS[BOSS_ID].name + " проснулась — и не догнала");
-    const byBoss = d.outcome === "caught" && d.catcherName === CHARACTERS[BOSS_ID].name;
-    label(this, CX, 345, lines.join("\n"), "h3", byBoss ? "#50c850" : view.good ? INK.goodSoft : INK.badSoft);
+    label(this, CX, 345, lines.join("\n"), "h3", view.good ? INK.goodSoft : INK.badSoft);
 
     // After a multiplayer round the session is closed; "again" means a fresh lobby.
     const again = d.multiplayer
       ? { text: "В ЛОББИ", onClick: () => this.scene.start("Lobby") }
       : { text: "СНОВА", onClick: () => this.scene.start("Game", {
-          character: d.character, difficulty: isDifficultyId(d.difficulty) ? d.difficulty : settings.difficulty }) };
+          character: isCharacterId(d.character) ? d.character : HERO_IDS[0], role: d.role, kit: d.kit,
+          difficulty: isDifficultyId(d.difficulty) ? d.difficulty : settings.difficulty } satisfies GameSceneData) };
     button(this, { x: CX - 110, y: 450, w: 200, h: 44, ...again, tone: view.good ? "good" : "blood" });
     button(this, { x: CX + 110, y: 450, w: 200, h: 44, text: "В МЕНЮ", onClick: () => this.scene.start("Menu") });
     button(this, { x: CX, y: 520, w: 200, h: 44, text: "СМЕНА ПЕРСОНАЖА", onClick: () => this.scene.start("Select") });

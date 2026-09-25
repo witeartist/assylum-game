@@ -222,7 +222,8 @@
 `<имя>_down.png` (лицом к камере), `<имя>_up.png` (спиной), `<имя>_side.png` (вправо; влево
 отзеркалю сам).
 
-Персонажи: `naumi`, `kuruna`, `wite`, `sumrak`, `yoko`, `foxmind`, `jeloch` — всего 21 картинка.
+Персонажи: `naumi`, `kuruna`, `wite`, `sumrak`, `yoko` — всего 15 картинок. Лиса и Желочь больше
+не персонажи (злодей — заражённый герой, раздел F2), их ракурсы не нужны.
 
 **Промпт:**
 > Chibi pixel-art game sprite. Use the attached image as the exact character reference: same hair, face, outfit, colors and proportions. The character is seen from a top-down 3/4 game camera, <DIRECTION>, standing, full body, clean dark outline. Flat lighting, no shadow on the ground. Single character, centered, transparent background, no text.

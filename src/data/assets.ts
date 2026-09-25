@@ -19,8 +19,6 @@ export const IMAGES: ImageAsset[] = [
   { key: "char.Wite",    url: "Sprite/Wite.png",    trim: true, fallback: "#e8e8e8" },
   { key: "char.Sumrak",  url: "Sprite/Sumrak.png",  trim: true, fallback: "#7a7a9a" },
   { key: "char.Yoko",    url: "Sprite/yoko.png",    trim: true, fallback: "#f1a127" },
-  { key: "char.Foxmind", url: "Sprite/Foxmind.png", trim: true, fallback: "#e84040" },
-  { key: "char.Jeloch",  url: "Sprite/jeloch.png",  trim: true, fallback: "#5ec45e" },
   { key: "ui/menu_art",  url: "Sprite/arts/main menu.jpg" },
   // Older hand-drawn beds, used only if generated ones are missing.
   { key: "props/bed_v_1", url: "Sprite/interior/bed_vertical.png",          trim: true, fallback: "#5f6878" },

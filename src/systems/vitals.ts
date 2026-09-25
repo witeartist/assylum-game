@@ -23,17 +23,21 @@ export class Vitals {
     for (const a of this.world.actors) {
       if (a.control === "remote" || !a.inPlay) continue;
       if (a.stunned > 0) a.stunned = Math.max(0, a.stunned - dt);
+      const v = a.velocity;
+      // A brute player's lunge (running) is short: it has to catch its breath after. The AI
+      // brute keeps its own rhythm of rushing and resting.
+      if (a.kit === "brute" && a.control !== "ai") staminaStep(a, a.gait === "run", Math.hypot(v.x, v.y) > 20, dt);
       if (a.role !== "runner") continue;
       if (a.adrenaline > 0) a.adrenaline = Math.max(0, a.adrenaline - dt);
-      const v = a.velocity;
       staminaStep(a, a.gait === "run", Math.hypot(v.x, v.y) > 20, dt);
+      if (a.lightJam > 0) a.lightJam = Math.max(0, a.lightJam - dt);
       this.battery(a, dt);
     }
   }
 
   private battery(a: Actor, dt: number): void {
     const f = a.flashlight;
-    if (!f.on) return;
+    if (!a.beamOn) return;
     f.charge = Math.max(0, f.charge - dt / BATTERY.seconds);
     if (f.charge > 0) return;
     f.on = false;
@@ -44,7 +48,7 @@ export class Vitals {
 /** The flashlight is on and has charge; a low battery makes the beam stutter. */
 export function beamStrength(a: Actor, t: number): number {
   const f = a.flashlight;
-  if (!f.on) return 0;
+  if (!a.beamOn) return 0;
   const low = a.control === "remote" ? (a.netFlags & NET_FLAG.batteryLow) !== 0 : f.charge < BATTERY.low;
   if (!low) return 1;
   const s = Math.sin(t * 23 + a.x * 0.1) * Math.sin(t * 9.7);

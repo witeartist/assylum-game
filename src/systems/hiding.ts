@@ -1,11 +1,12 @@
 // Hiding spots: lockers in most rooms, beds in wards. A hidden runner can't be seen or caught by
 // contact — but breathing gives them away when a monster is right outside: hold your breath
-// (Space). A hunter who saw you get in, or heard you, opens the spot; so can a hunter player (E).
+// (Space). A villain who saw you get in, or heard you, opens the spot; so can a villain player (E).
+// The fox takes a moment to search; the brute tears it open at once.
 import type Phaser from "phaser";
 import { TILE } from "../core/constants";
 import { dist, tileCenter } from "../core/geom";
 import type { Vec2 } from "../core/types";
-import { BED_RANGE, BREATH, HUNTER_AI, LOCKER_RANGE, NOISE } from "../data/balance";
+import { BED_RANGE, BREATH, BRUTE_CHECK_TIME, HUNTER_AI, LOCKER_RANGE, NOISE } from "../data/balance";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import { standingLayout } from "../render/propLayout";
@@ -178,14 +179,14 @@ export class Hiding {
   /** A monster searches a spot: after a moment it is opened, and whoever is inside is found. */
   check(spot: HideSpot, by: Actor): void {
     if (this.checks.has(spot)) return;
-    this.checks.set(spot, { left: HUNTER_AI.checkTime, by });
+    this.checks.set(spot, { left: by.kit === "brute" ? BRUTE_CHECK_TIME : HUNTER_AI.checkTime, by });
     if (spot.kind === "locker") this.setLocker(spot, true);
     this.world.events.emit("spotChecked", { index: this.spots.indexOf(spot), by: by.id });
   }
 
   checking(spot: HideSpot): boolean { return this.checks.has(spot); }
 
-  /** A hunter player searches a spot: decided by the authority (clients ask the host). */
+  /** A villain player searches a spot: decided by the authority (clients ask the host). */
   requestCheck(spot: HideSpot, by: Actor): void {
     if (this.world.isAuthority) this.check(spot, by);
     else this.world.events.emit("checkRequested", { index: this.spots.indexOf(spot) });

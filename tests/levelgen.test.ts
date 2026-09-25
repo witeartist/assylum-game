@@ -25,7 +25,7 @@ function problems(L: LevelData, o: LevelOptions): string[] {
     if (lockedKeys.has(i) && reachable) errs.push(`locked key ${i} reachable`);
     if (!lockedKeys.has(i) && !reachable) errs.push(`free key ${i} unreachable`);
   });
-  const must = [L.foxSpawn, L.bossSpawn, L.exitTile, ...L.npcSpawns, ...L.lockedDoors.map(l => l.terminalTile), ...L.fuseTiles, ...(L.fuseBox ? [L.fuseBox] : [])];
+  const must = [...L.villainSpawns, L.exitTile, ...L.npcSpawns, ...L.lockedDoors.map(l => l.terminalTile), ...L.fuseTiles, ...(L.fuseBox ? [L.fuseBox] : [])];
   if (!must.every(t => distanceTo(d, t) >= 0)) errs.push("spawn/exit/terminal unreachable with doors closed");
   const open = distanceMap(walk, L.playerSpawn);
   if (![L.exitTile, ...L.keyTiles].every(t => distanceTo(open, t) >= 0)) errs.push("unwinnable with doors open");
