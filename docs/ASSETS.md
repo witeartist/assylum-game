@@ -10,8 +10,8 @@
 папке тоже попадёт куда надо. Варианты складывай в `art/_variants/` — их скрипт пропускает.
 
 **Статус:** все 90 картинок P1–P3 получены и подключены. Новое для помещений — **раздел H**
-(двери, щиток, шкафчики сбоку, декор стен, новые типы комнат). Не хватает персонажей (раздел F)
-и звуков.
+(двери, щиток, шкафчики сбоку, декор стен, новые типы комнат). Не хватает персонажей (раздел F).
+Звук: первая партия получена, чего не хватает — в разделе «Звук» в конце.
 
 **Приоритеты**
 - **P1** — нужно для этапа 2 (графика 2.5D), делать первым.
@@ -329,14 +329,49 @@
 
 ---
 
-## Звук (P2, отдельно — не gpt-image)
+## Звук (не gpt-image)
 
-Нужен другой инструмент: ElevenLabs Sound Effects или бесплатные CC0 с freesound.org.
-Формат `.ogg`, моно, 44,1 кГц. Папка `public/assets/sfx/`.
+**Инструмент:** ElevenLabs Sound Effects, как ты уже делал, или CC0 с freesound.org.
 
-- **Шаги:** `step_tile_walk_1..4`, `step_tile_run_1..4`.
-- **Укрытия и двери:** `locker_open`, `locker_close`, `door_unlock`, `door_creak`.
-- **Терминал и фонарик:** `terminal_beep`, `terminal_error`, `terminal_success`, `flashlight_click`.
-- **Состояния:** `key_pickup`, `heartbeat_loop`, `breath_heavy`, `caught_scream`.
-- **Монстры:** `fox_laugh`, `fox_growl`, `boss_roar`.
-- **Атмосфера:** `lamp_buzz_loop`, `ambient_drone_loop`, `distant_scream_1..3`.
+**Статус:** первая партия (29 файлов) получена, подключаю на этапе 5. Туда вошли:
+- шаги, двери, шкафчики, терминал, фонарик, ключи;
+- сердцебиение, лиса, рёв, крик, скримеры;
+- гул ламп, фон и музыка меню.
+
+**Куда класть:** `art/sound/`, в любом формате (`.mp3`, `.wav`). Имя файла тоже любое — можно
+оставить то, что даёт генератор. Длинный файл с несколькими повторами — даже лучше:
+`npm run assets` сам нарежет варианты, уберёт тишину, выровняет громкость и сожмёт. Какой кусок
+куда идёт, записано в `src/data/sounds.ts`.
+
+**Советы:**
+- делай 2–3 варианта или один файл с серией повторов;
+- короткие эффекты — сухие, без длинного эха.
+
+**Не хватает** (для механик этапа 3 и злодеев):
+
+| Файл | P | Длина | Промпт |
+|---|---|---|---|
+| `door_slam` | P1 | 1 с | heavy wooden door slamming shut, loud thud, short hallway reverb |
+| `door_smash` | P1 | 2 с | wooden door violently smashed open by a monster, splintering wood crash, loud impact |
+| `bottle_break` | P1 | 1 с | glass bottle shattering on a ceramic tile floor, sharp crash, scattering shards, short |
+| `breath_heavy` | P1 | 4 с | exhausted person panting after running, heavy fast breathing, close up, dry |
+| `breath_gasp` | P1 | 1 с | person gasping for air after holding their breath, sharp inhale and shaky exhale, close up |
+| `bed_hide` | P1 | 2 с | old metal hospital bed springs creaking, someone crawling under the bed, close up |
+| `fuse_insert` | P1 | 1 с | heavy ceramic fuse pushed into an old electrical fuse box, metal contact clunk, close up |
+| `power_on` | P1 | 4 с | old industrial electrical power switching back on, deep transformer hum rising, relays clicking |
+| `exit_open` | P1 | 3 с | heavy double metal doors bursting open, chain falling on a concrete floor, wind rushing in |
+| `step_monster` | P1 | 8 шагов в файле | heavy slow monster footsteps on ceramic tile, deep thuds with a wet squelch, empty hallway reverb |
+| `step_fox` | P1 | 8 шагов в файле | quick light animal footsteps with claws clicking on ceramic tile, close up, dry |
+| `pickup` | P1 | 0,5 с | very short sound, picking up a small object from the floor, light clink and cloth rustle, close up |
+| `glowstick` | P2 | 1 с | plastic glowstick bent and cracked, snap and liquid crackle, close up |
+| `whistle` | P2 | 1,5 с | loud sharp human whistle, two short notes, echoing in an empty concrete hallway |
+| `fox_flash` | P2 | 1,5 с | old camera flash charging whine, then a bright pop, close up |
+| `grab` | P2 | 1,5 с | monster grabbing a person, cloth tearing, struggling grunts, close up |
+| `break_free` | P2 | 1 с | person breaking free from a grip, pushing, short gasp, close up |
+| `injection` | P2 | 0,5 с | very short sound, syringe injection, small plastic click and hiss, close up |
+| `battery_swap` | P2 | 1 с | flashlight battery compartment opened, battery swapped, plastic clicks, close up |
+| `note_paper` | P2 | 0,5 с | very short sound, unfolding an old paper note, paper rustle, close up |
+| `lamp_die` | P2 | 2 с | fluorescent tube sputtering and dying, electrical crackle and buzz surge |
+| `distant_1..4` | P2 | 3–5 с | distant metal bang echoing in an abandoned hospital, far away / water dripping in an empty concrete room / distant muffled scream through empty hallways / old building structure groaning |
+| `ui_click` | P3 | 0,2 с | very short sound, UI button click, dull metallic tick |
+| `sting_win`, `sting_lose` | P3 | 4 с | short dark musical sting of relief, low strings resolving / short horror sting of defeat, low brass and dissonant strings |
