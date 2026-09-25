@@ -24,7 +24,7 @@ export interface NoiseEvent {
 
 /** Footstep sound of an actor's current gait: radius in tiles and seconds between steps. */
 function stepOf(a: Actor): { radius: number; every: number; kind: NoiseKind } | null {
-  if (a.role === "boss") return { ...NOISE.bossStep, kind: "monster" };
+  if (a.kit === "brute") return { ...NOISE.bossStep, kind: "monster" };
   if (a.gait === "sneak") return null;
   if (a.role === "hunter") return a.gait === "run" ? { ...NOISE.hunterRun, kind: "monster" } : { ...NOISE.hunterWalk, kind: "monster" };
   if (a.gait === "run" && !a.exhausted) return { radius: NOISE.run.radius * (a.def.ability?.runNoise ?? 1), every: NOISE.run.every, kind: "run" };

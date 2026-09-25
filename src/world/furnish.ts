@@ -33,7 +33,7 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
   const doorTiles = level.lockedDoors.flatMap(d => d.doorTiles);
   const lookup = buildRoomLookup(level.rooms);
   const mustReachClosed: Tile[] = [
-    level.foxSpawn, level.bossSpawn, level.exitTile, ...level.npcSpawns, ...level.fuseTiles,
+    ...level.villainSpawns, level.exitTile, ...level.npcSpawns, ...level.fuseTiles,
     ...(level.fuseBox ? [level.fuseBox] : []),
     ...level.lockedDoors.map(d => d.terminalTile),
     ...level.keyTiles.filter((_, i) => !level.lockedDoors.some(d => d.keyIndex === i)),

@@ -1,10 +1,12 @@
-// Boss (Желочь). Slow, but it never stops: it follows the scent trail of the nearest runner a
-// few seconds behind, hears far and sees in the dark. When it sees you it rushes — faster than
-// you walk — then has to catch its breath. It stops at the locker where your trail ends and
-// may tear it open. The lamps around it stutter and die down: that is how you know it's near.
+// The AI villain with the brute kit (once the boss Желочь). Slow, but it never stops: it follows
+// the scent trail of the nearest runner a few seconds behind and hears far, but sees little in the
+// dark. When it sees you it roars (if it can) and rushes — faster than you walk — then has to
+// catch its breath. It stops at the locker where your trail ends and may tear it open. The lamps
+// around it stutter and die down: that is how you know it's near.
 import { TILE } from "../core/constants";
 import { dist, worldToTile } from "../core/geom";
-import { BOSS_AI, DARK_SIGHT, NOISE } from "../data/balance";
+import { BOSS_AI, NOISE } from "../data/balance";
+import { KITS } from "../data/characters";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import type { HideSpot } from "../systems/hiding";
@@ -13,8 +15,8 @@ import { sees, type SightSpec } from "./senses";
 
 type State = "stalk" | "rush" | "rest" | "investigate" | "check" | "stunned";
 
-/** It follows the trail this many seconds behind the runner. */
-const TRAIL_LAG = 5;
+/** It follows the trail this many seconds behind the runner (closer than 6 tiles: `near`). */
+const TRAIL_LAG = { far: 7, near: 2.5 };
 
 export class BossAI extends MonsterBrain {
   state: State = "stalk";
@@ -26,7 +28,7 @@ export class BossAI extends MonsterBrain {
 
   private spec(): SightSpec {
     const d = this.world.diff;
-    return { fovHalf: BOSS_AI.fovHalf, range: (d.foxSight + 4) * TILE, dark: DARK_SIGHT.boss * TILE, near: TILE * 1.6 };
+    return { fovHalf: BOSS_AI.fovHalf, range: Math.min(d.foxSight, BOSS_AI.sight) * TILE, dark: KITS.brute.darkSight * TILE, near: TILE * 1.6 };
   }
 
   update(dt: number): void {
@@ -47,7 +49,7 @@ export class BossAI extends MonsterBrain {
       this.target = seen;
       if (this.state !== "rush" && this.state !== "rest") {
         this.enter("rush");
-        w.noise.emit(a.x, a.y, NOISE.bossStep.radius + 3, "monster", a);
+        if (!w.abilities.use(a)) w.noise.emit(a.x, a.y, NOISE.bossStep.radius + 3, "monster", a);
         if (w.local.inPlay && dist(w.local, a) < TILE * 12) w.shake(350, 0.012);
       }
     }
@@ -102,7 +104,7 @@ export class BossAI extends MonsterBrain {
       this.triedSpots.set(spot, this.t);
       if (w.rng.chance(0.55)) { this.checkSpot = spot; this.enter("check"); return; }
     }
-    const mark = w.scent.pointAgo(prey, dist(a, prey.authPos) < TILE * 6 ? 1.5 : TRAIL_LAG) ?? prey.authPos;
+    const mark = w.scent.pointAgo(prey, dist(a, prey.authPos) < TILE * 6 ? TRAIL_LAG.near : TRAIL_LAG.far) ?? prey.authPos;
     if (this.goTo(this.walkableNear(mark), "walk", dt, 1)) this.lookAround(dt, 1.2);
   }
 

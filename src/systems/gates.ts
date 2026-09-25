@@ -1,5 +1,5 @@
-// Doors in doorways. Anyone can open or close one (E); monsters open them on their way — the
-// hunter with a pause, the boss by smashing through. A closed door blocks sight, light and
+// Doors in doorways. Anyone can open or close one (E); villains open them on their way — the
+// fox with a pause, the brute by smashing through. A closed door blocks sight, light and
 // sound (and slows whoever chases you); opening or shutting one creaks. Shutting a door while
 // standing in it steps you out to your side first. The leaf swings on its hinge.
 import type Phaser from "phaser";
@@ -25,8 +25,8 @@ export interface Gate {
   lintel: Phaser.GameObjects.Image | null;
 }
 
-/** Seconds a door holds each kind of actor up. */
-const OPEN_TIME = { runner: 0.35, hunter: 0.7, boss: 1.1 };
+/** Seconds a door holds each kind of actor up (runners, and villains by kit). */
+const OPEN_TIME = { runner: 0.35, fox: 0.7, brute: 1.1 };
 /** How long the leaf takes to swing, ms. */
 const SWING_MS = 170;
 /** A door slammed on the run is louder. */
@@ -92,9 +92,9 @@ export class Gates {
     g.open = open;
     this.apply(g);
     this.swing(g);
-    const loud = by?.role === "boss" ? 10 : by?.gait === "sneak" ? 2.5 : by?.gait === "run" && !open ? NOISE.door * SLAM : NOISE.door;
+    const loud = by?.kit === "brute" && open ? 10 : by?.gait === "sneak" ? 2.5 : by?.gait === "run" && !open ? NOISE.door * SLAM : NOISE.door;
     w.noise.emit(g.x, g.y, loud, "door", by);
-    if (by?.role === "boss" && w.local.inPlay && dist(w.local, g) < TILE * 10) w.shake(250, 0.01);
+    if (by?.kit === "brute" && open && w.local.inPlay && dist(w.local, g) < TILE * 10) w.shake(250, 0.01);
     w.events.emit("gateChanged", { index: i, open, by: by?.id ?? "", remote });
   }
 
@@ -108,7 +108,7 @@ export class Gates {
     if (i < 0 || dist(a, tileCenter(next)) > TILE * 1.4) { this.opening.delete(a); return false; }
     a.halt();
     const t = (this.opening.get(a) ?? 0) + dt;
-    if (t >= OPEN_TIME[a.role]) { this.opening.delete(a); this.set(i, true, a); }
+    if (t >= OPEN_TIME[a.kit ?? "runner"]) { this.opening.delete(a); this.set(i, true, a); }
     else this.opening.set(a, t);
     return true;
   }

@@ -1,12 +1,13 @@
-// AI hunter (Foxmind). It sees what is in front of it and lit (or close in the dark), hears
-// footsteps, alarms and breathing, and remembers: it chases what it sees, runs to where you
-// were headed when you vanished, searches the area and the hiding spots around it, goes to look
-// at every suspicious sound, checks the locker it saw you climb into, patrols the places where
-// runners were noticed and guards the exit when the escape is near.
+// The AI villain with the fox kit (once the hunter Foxmind). It sees what is in front of it and
+// lit (or close in the dark), hears footsteps, alarms and breathing, and remembers: it chases what
+// it sees, runs to where you were headed when you vanished, searches the area and the hiding
+// spots around it, goes to look at every suspicious sound, checks the locker it saw you climb
+// into, patrols the places where runners were noticed and guards the exit when the escape is near.
 import { TILE } from "../core/constants";
 import { dist, tileCenter, tileIndex, worldToTile } from "../core/geom";
 import type { Tile } from "../core/types";
-import { DARK_SIGHT, HUNTER_AI } from "../data/balance";
+import { HUNTER_AI } from "../data/balance";
+import { KITS } from "../data/characters";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import type { HideSpot } from "../systems/hiding";
@@ -40,7 +41,7 @@ export class HunterAI extends MonsterBrain {
 
   private spec(): SightSpec {
     const d = this.world.diff;
-    return { fovHalf: HUNTER_AI.fovHalf, range: d.foxSight * TILE, dark: DARK_SIGHT.hunter * TILE * 0.8, near: HUNTER_AI.nearSense * TILE };
+    return { fovHalf: HUNTER_AI.fovHalf, range: d.foxSight * TILE, dark: KITS.fox.darkSight * TILE * 0.8, near: HUNTER_AI.nearSense * TILE };
   }
 
   update(dt: number): void {
@@ -121,7 +122,7 @@ export class HunterAI extends MonsterBrain {
         const ls = this.lastSeen!;
         if (this.phase === 0) {
           this.phase = 1;
-          if (w.foxFlash.ready && dist(a, ls) < TILE * 9) w.foxFlash.trigger(a);
+          if (w.abilities.ready(a) && dist(a, ls) < TILE * 9) w.abilities.use(a);
         }
         const guess = this.walkableNear({ x: ls.x + ls.vx * 1.2, y: ls.y + ls.vy * 1.2 });
         if (this.goTo(guess, "run", dt, 0.4)) this.enter("search");
@@ -134,7 +135,7 @@ export class HunterAI extends MonsterBrain {
           if (this.goTo(this.walkableNear(c), c.strength >= 2 && far ? "run" : "walk", dt)) {
             this.phase = 1;
             this.waitT = 1.8;
-            if (c.strength >= 2 && w.foxFlash.ready && !w.lighting.isLit(a)) w.foxFlash.trigger(a);
+            if (c.strength >= 2 && w.abilities.ready(a) && !w.lighting.isLit(a)) w.abilities.use(a);
           }
         } else {
           this.lookAround(dt);

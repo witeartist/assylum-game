@@ -145,7 +145,7 @@ export class Doors {
     d.hack = Math.min(1, d.hack + dt * (a.def.ability?.hackSpeed ?? 1) / BOT_HACK_TIME);
     // Half way through, a clumsy bot may trip the alarm.
     if (before < 0.5 && d.hack >= 0.5 && this.world.rng.chance(BOT_ALARM_CHANCE)) this.alarm(i);
-    if (d.hack >= 1) this.open(i, a.def.name);
+    if (d.hack >= 1) this.open(i, a.displayName);
     return true;
   }
 

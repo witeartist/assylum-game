@@ -218,7 +218,7 @@ export class Items {
     this.whistleCooldown = WHISTLE_COOLDOWN;
     w.events.emit("itemThrown", { kind: "whistle", by: a.id, x: a.x, y: a.y, tx: a.x, ty: a.y, remote: false });
     this.whistle(a.x, a.y, a);
-    w.toast("Свист! Охотник идёт на звук", "warn");
+    w.toast("Свист! Злодей идёт на звук", "warn");
   }
 
   whistle(x: number, y: number, by: Actor | null): void {

@@ -1,8 +1,8 @@
 // What you hear in a round. Everything that happens makes its sound where it happens, and you
 // hear it the way the game says you hear it: the same noise system as the AI and the ripples on
-// screen, walls muffle, distance fades. Plus the building — the drone, lamps humming and
-// sputtering, far-off bangs and screams — and your own heart racing when a monster is near.
-// Only listens: it never changes the game.
+// screen, walls muffle, distance fades. Plus the building — the drone, lamps humming, sputtering
+// and dying, far-off bangs and screams, its groan when it wakes — and your own heart racing when
+// a monster is near. Only listens: it never changes the game.
 import { audio, type PlayOptions, type Voice } from "../core/audio";
 import { TILE } from "../core/constants";
 import { dist } from "../core/geom";
@@ -21,7 +21,7 @@ const SPUTTER_LEVEL = 0.35;
 /** Seconds between far-off sounds of the building. */
 const DISTANT = { min: 18, max: 45 };
 const DISTANT_KEYS: SoundKey[] = ["distantBang", "distantScream", "distantGroan", "drip"];
-/** Seconds between the hunter's laughs from afar. */
+/** Seconds between the fox's laughs from afar. */
 const LAUGH = { min: 45, max: 90, far: TILE * 10 };
 
 export class Soundscape {
@@ -33,7 +33,7 @@ export class Soundscape {
   private distantT = DISTANT.min;
   private laughT = LAUGH.min;
   private flashlightOn: boolean;
-  private flashActive = false;
+  private jammed = false;
   private shown = -1;
   private typed = 0;
   private states = new Map<Actor, string>();
@@ -58,7 +58,7 @@ export class Soundscape {
       this.at("grab", actor);
       this.at("scream", actor, { delay: 0.15 });
       const catcher = this.actor(by);
-      if (catcher?.role === "hunter") this.at("foxLaugh", catcher, { delay: 0.9 });
+      if (catcher?.kit === "fox") this.at("foxLaugh", catcher, { delay: 0.9 });
       if (actor === world.local) audio.play("stinger");
     });
     on("hidingChanged", ({ actor }) => {
@@ -91,10 +91,15 @@ export class Soundscape {
     on("gateChanged", ({ index, open, by }) => {
       const g = world.gates.gates[index], a = this.actor(by);
       if (!g) return;
-      if (open) this.at(a?.role === "boss" ? "doorSmash" : "doorOpen", g);
+      if (open) this.at(a?.kit === "brute" ? "doorSmash" : "doorOpen", g);
       else this.at("doorSlam", g, { volume: a?.gait === "run" ? 1.15 : 0.7 });
     });
-    on("bossSpawned", () => { audio.play("roar"); audio.play("stinger", { delay: 0.2 }); });
+    on("buildingAwake", () => { audio.play("distantGroan", { volume: 1.6 }); audio.play("stinger", { delay: 0.3 }); });
+    on("abilityUsed", ({ kind, by, x, y }) => {
+      const a = this.actor(by), p = a === world.vision.viewer ? a : { x, y };
+      if (kind === "fox") this.at("foxFlash", p);
+      else this.at("roar", p, { range: 32 });
+    });
   }
 
   /** Leaving the round: silence the building. */
@@ -132,7 +137,7 @@ export class Soundscape {
     const w = this.world;
     for (const e of w.noise.since(this.lastNoise)) {
       const key: SoundKey | null = e.kind === "step" ? "stepWalk" : e.kind === "run" ? "stepRun"
-        : e.kind === "monster" ? (e.source?.role === "boss" ? "stepMonster" : "stepClaws")
+        : e.kind === "monster" ? (e.source?.kit === "brute" ? "stepMonster" : "stepClaws")
         : e.kind === "breath" ? "pant" : e.kind === "gasp" ? "gasp" : e.kind === "glass" ? "bottleBreak" : e.kind === "alarm" ? "terminalError" : null;
       if (!key) continue;
       if (e.source === ear) { audio.play(key, { volume: 0.55 }); continue; }
@@ -143,10 +148,13 @@ export class Soundscape {
     this.lastNoise = w.noise.lastId;
   }
 
-  /** Your own hands: the flashlight, the terminal. */
+  /** Your own hands: the flashlight (and it dying at a roar), the terminal. */
   private own(_dt: number): void {
     const w = this.world, me = w.local;
     if (me.flashlight.on !== this.flashlightOn) { this.flashlightOn = me.flashlight.on; audio.play("flashlight"); }
+    const jammed = me.flashlight.on && me.lightJam > 0;
+    if (jammed && !this.jammed) audio.play("lampDie", { volume: 0.8 });
+    this.jammed = jammed;
     const mg = w.doors.minigame;
     if (!mg.active) { this.shown = -1; this.typed = 0; return; }
     if (mg.shown >= 0 && mg.shown !== this.shown) audio.play("terminalBeep", { rate: 1.25 });
@@ -169,34 +177,31 @@ export class Soundscape {
     this.beatT = HEART.slow + (HEART.fast - HEART.slow) * danger;
   }
 
-  /** The hunter growls when it starts a chase and laughs from afar now and then. */
+  /** The fox growls when it starts a chase and laughs from afar now and then. */
   private monsters(dt: number): void {
     const w = this.world, ear = w.vision.viewer;
     for (const a of w.threats()) {
       const state = a.brain && "state" in a.brain ? String((a.brain as { state: unknown }).state) : "";
       const was = this.states.get(a);
       this.states.set(a, state);
-      if (state === "chase" && was !== "chase" && this.t - (this.growled.get(a) ?? -99) > 6) {
+      if (a.kit === "fox" && state === "chase" && was !== "chase" && this.t - (this.growled.get(a) ?? -99) > 6) {
         this.growled.set(a, this.t);
-        this.at(a.role === "boss" ? "roar" : "foxGrowl", a);
+        this.at("foxGrowl", a);
       }
     }
-    const flash = w.foxFlash;
-    if (flash.active && !this.flashActive) this.at("foxFlash", { x: flash.x, y: flash.y });
-    this.flashActive = flash.active;
     this.laughT -= dt;
     if (this.laughT > 0) return;
     this.laughT = LAUGH.min + Math.random() * (LAUGH.max - LAUGH.min);
-    const fox = w.threats().find(a => a.role === "hunter");
+    const fox = w.threats().find(a => a.kit === "fox");
     if (fox && dist(fox.authPos, ear) > LAUGH.far) audio.play("foxLaugh", { at: fox.authPos, range: 45, muffle: 0.8 });
   }
 
-  /** The nearest lamps hum; one that dips sputters. */
+  /** The nearest lamps hum; one that dips sputters; dead ones are silent. */
   private lamps(): void {
     const w = this.world, ear = w.vision.viewer;
     const levels = w.lighting.lampLevels;
     const near = levels.map((l, i) => ({ l, i, d: dist(l, ear) }))
-      .filter(o => o.d < HUMS.range).sort((a, b) => a.d - b.d).slice(0, HUMS.count);
+      .filter(o => !o.l.dead && o.d < HUMS.range).sort((a, b) => a.d - b.d).slice(0, HUMS.count);
     const keep = new Set(near.map(o => o.i));
     for (const [i, v] of this.hums) if (!keep.has(i)) { v.stop(0.4); this.hums.delete(i); }
     for (const { l, i } of near) {
@@ -207,7 +212,7 @@ export class Soundscape {
       else { const nv = audio.loop("lampHum", { at: l, muffle, volume }); if (nv) this.hums.set(i, nv); }
     }
     levels.forEach((l, i) => {
-      if (l.level >= SPUTTER_LEVEL || this.t - (this.sputtered.get(i) ?? -99) < 3 || dist(l, ear) > TILE * 9) return;
+      if (l.dead || l.level >= SPUTTER_LEVEL || this.t - (this.sputtered.get(i) ?? -99) < 3 || dist(l, ear) > TILE * 9) return;
       this.sputtered.set(i, this.t);
       this.at("lampDie", l, { volume: 0.8 });
     });

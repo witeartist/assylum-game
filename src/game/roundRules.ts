@@ -1,6 +1,36 @@
 // Round bookkeeping and end-of-round rules, free of Phaser so they can be unit-tested.
 import type { Role, RunnerStatus } from "../core/types";
+import { HERO_IDS, KIT_IDS } from "../data/characters";
+import type { PlayerInfo, StartInfo } from "../net/protocol";
 import type { NetMode } from "./World";
+
+/** With this many players, two of them may be the villain (if two asked to). */
+const TWO_VILLAINS_FROM = 5;
+
+/**
+ * Who is the villain in a multiplayer round: those who asked to be (one; two in a full room),
+ * picked at random among them, or someone at random when nobody asked. A villain keeps the kit
+ * they asked for; a drafted one gets a random kit. A lone player runs from the AI.
+ */
+export function pickVillains(players: Record<string, PlayerInfo>, random: () => number): Pick<StartInfo, "villains" | "aiVillain"> {
+  const ids = Object.keys(players);
+  const pick = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)];
+  if (ids.length < 2) {
+    const taken = new Set(ids.map(id => players[id].character));
+    return { villains: {}, aiVillain: { character: pick(HERO_IDS.filter(c => !taken.has(c))), kit: pick(KIT_IDS) } };
+  }
+  const volunteers = ids.filter(id => players[id].villain);
+  // Shuffle, so who gets the part among volunteers is a coin toss.
+  for (let i = volunteers.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [volunteers[i], volunteers[j]] = [volunteers[j], volunteers[i]];
+  }
+  const chosen = volunteers.slice(0, ids.length >= TWO_VILLAINS_FROM ? 2 : 1);
+  if (chosen.length === 0) chosen.push(pick(ids));
+  const villains: StartInfo["villains"] = {};
+  for (const id of chosen) villains[id] = players[id].villain ?? pick(KIT_IDS);
+  return { villains, aiVillain: null };
+}
 
 export interface RunnerCounts { total: number; alive: number; caught: number; escaped: number; }
 

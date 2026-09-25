@@ -1,7 +1,7 @@
 // Things drawn over the lit world without being lit themselves: name tags, terminal labels,
 // ripples of sounds you can hear (you hear steps even in total darkness), marks from a map piece
-// and what some characters sense through the dark. Lives in the HUD scene and tracks world
-// positions through the camera rig.
+// and what some characters sense through the dark — a brute player smells the runners' trails.
+// Lives in the HUD scene and tracks world positions through the camera rig.
 import Phaser from "phaser";
 import { CANVAS_W, CANVAS_H, TILE } from "../core/constants";
 import { dist } from "../core/geom";
@@ -19,6 +19,11 @@ const TAG_GAP = 3;
 /** Ripple colours: runners, monsters, everything else (glass, alarms…). */
 const RIPPLE = { runner: 0x6478a0, monster: 0xc0302a, thing: 0xb8a060 };
 const EDGE = 26;
+/**
+ * A brute player smells trails this close (tiles) and this fresh (seconds) — but not the last
+ * `lag` seconds of them: it knows where you went, not where you are.
+ */
+const SMELL = { range: 10, age: 22, lag: 3, color: 0x7ed65a };
 
 export class WorldOverlay {
   private tags = new Map<Actor, Phaser.GameObjects.Text>();
@@ -37,10 +42,10 @@ export class WorldOverlay {
     this.t += this.scene.game.loop.delta / 1000;
     for (const a of w.actors) {
       let tag = this.tags.get(a);
-      if (!tag) { tag = label(this.scene, 0, 0, a.def.name, "tag", a.def.color); this.tags.set(a, tag); }
+      if (!tag) { tag = label(this.scene, 0, 0, a.displayName, "tag", a.nameColor); this.tags.set(a, tag); }
       tag.setVisible(a.shown).setAlpha(a.fade);
       if (!a.shown) continue;
-      const p = rig.toScreen({ x: a.x, y: a.feetY - a.def.height - TAG_GAP });
+      const p = rig.toScreen({ x: a.x, y: a.feetY - a.figureHeight - TAG_GAP });
       tag.setPosition(Math.round(p.x), Math.round(p.y));
     }
     w.doors.doors.forEach((d, i) => {
@@ -60,6 +65,7 @@ export class WorldOverlay {
     let icon = 0;
     const mark = (p: Vec2, key: string, alpha: number, edge = false) => { icon = this.mark(icon, p, key, alpha, edge); };
     for (const m of w.items.markers) mark(m, m.icon, Math.min(1, m.left / 3) * (0.7 + 0.3 * Math.sin(this.t * 5)), true);
+    if (w.local.inPlay && w.local.kit === "brute") this.smell(w.local);
     const sense = w.local.def.ability;
     if (w.local.inPlay && sense?.objectSense) {
       const r = sense.objectSense * TILE;
@@ -115,6 +121,18 @@ export class WorldOverlay {
         g.lineStyle(monster ? 2.2 : 1.4, color, alpha);
         g.beginPath(); g.arc(p.x, p.y, rr, a0 + span * 0.08, a0 + span * 0.92); g.strokePath();
       }
+    }
+  }
+
+  /** The runners' trails around the brute: faint drops, brighter the fresher. */
+  private smell(me: Actor): void {
+    const g = this.g, rig = this.world.camera;
+    for (const m of this.world.scent.near(me, SMELL.range * TILE, SMELL.age)) {
+      if (m.age < SMELL.lag) continue;
+      const k = 1 - (m.age - SMELL.lag) / (SMELL.age - SMELL.lag), p = rig.toScreen(m);
+      const pulse = 0.75 + 0.25 * Math.sin(this.t * 3 + m.x * 0.05 + m.y * 0.03);
+      g.fillStyle(SMELL.color, 0.1 * k).fillCircle(p.x, p.y, (3 + 3 * k) * VIEW_ZOOM);
+      g.fillStyle(SMELL.color, 0.5 * k * pulse).fillCircle(p.x, p.y, (0.8 + 0.9 * k) * VIEW_ZOOM);
     }
   }
 

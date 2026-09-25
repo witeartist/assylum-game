@@ -8,6 +8,7 @@ import { TILE } from "../core/constants";
 import { dist } from "../core/geom";
 import type { Vec2 } from "../core/types";
 import { DARK_SIGHT } from "../data/balance";
+import { KITS } from "../data/characters";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import { hasLineOfSight } from "../world/grid";
@@ -27,13 +28,13 @@ export class Vision {
   /** How far lamp-lit places stay visible, world px. */
   get sightRange(): number {
     const w = this.world;
-    return (w.local.role === "hunter" ? Math.max(w.diff.sight, w.diff.foxSight) : w.diff.sight) * TILE;
+    return (w.local.kit === "fox" ? Math.max(w.diff.sight, w.diff.foxSight) : w.diff.sight) * TILE;
   }
 
   /** How far the viewer makes out unlit things, world px. */
   darkSight(target?: Actor): number {
     const hunter = this.viewer.role === "hunter";
-    const base = (hunter ? DARK_SIGHT.hunter : DARK_SIGHT.runner) * TILE;
+    const base = (this.viewer.kit ? KITS[this.viewer.kit].darkSight : DARK_SIGHT.runner) * TILE;
     return hunter && target ? base * (target.def.ability?.darkStealth ?? 1) : base;
   }
 
@@ -62,7 +63,7 @@ export class Vision {
     const v = this.viewer, d = dist(v, a);
     if (d > this.sightRange * 1.3 || !hasLineOfSight(this.world.sight, v, a)) return false;
     if (d <= this.darkSight(a)) return true;
-    return a.flashlight.on || this.world.lighting.isLit(a);
+    return a.beamOn || this.world.lighting.isLit(a);
   }
 
   /** Can the viewer see this spot? `glows`: the thing lights itself (terminals, keys). */

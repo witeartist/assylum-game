@@ -16,7 +16,7 @@ import type { Objectives } from "../systems/objectives";
 import type { Doors } from "../systems/doors";
 import type { Hiding } from "../systems/hiding";
 import type { Lighting } from "../systems/lighting";
-import type { FoxFlash } from "../systems/foxFlash";
+import type { Abilities } from "../systems/abilities";
 import type { StandingProp, Vision } from "../systems/vision";
 import type { Noise, NoiseKind } from "../systems/noise";
 import type { Director } from "../systems/director";
@@ -29,6 +29,7 @@ import type { Gates } from "../systems/gates";
 import type { Scent } from "../ai/scent";
 import type { CameraRig } from "../render/cameraRig";
 import type { ItemKind } from "../data/items";
+import type { KitId } from "../data/characters";
 
 /** solo = everything local; host = authoritative peer; client = follows the host. */
 export type NetMode = "solo" | "host" | "client";
@@ -57,7 +58,10 @@ export interface GameEvents {
   gateChanged: { index: number; open: boolean; by: string; remote: boolean };
   /** A noise other peers can't work out themselves (radius in tiles). */
   noiseMade: { x: number; y: number; radius: number; kind: NoiseKind; by: string };
-  bossSpawned: { remote: boolean };
+  /** The building woke up (director.ts). */
+  buildingAwake: { remote: boolean };
+  /** A villain used its R (a flash or a roar) at (x, y). */
+  abilityUsed: { kind: KitId; by: string; x: number; y: number; remote: boolean };
   /** Host: the round is over; final status of every runner. */
   roundResults: { results: Record<string, RunnerStatus> };
   toast: { text: string; tone: Tone };
@@ -91,7 +95,7 @@ export class World {
   doors!: Doors;
   hiding!: Hiding;
   lighting!: Lighting;
-  foxFlash!: FoxFlash;
+  abilities!: Abilities;
   vision!: Vision;
   noise!: Noise;
   director!: Director;
@@ -133,7 +137,7 @@ export class World {
   byId(id: string): Actor | undefined { return this.actors.find(a => a.id === id); }
 
   runners(): Actor[] { return this.actors.filter(a => a.role === "runner"); }
-  /** Hunter and boss actors that are on the map. */
+  /** The villains on the map. */
   threats(): Actor[] { return this.actors.filter(a => a.role !== "runner" && a.inPlay); }
 
   roomAt(p: Vec2): Room | null {

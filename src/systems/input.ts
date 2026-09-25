@@ -2,6 +2,7 @@
 // keyboard layout. The flashlight follows the mouse while it moves, otherwise the walking direction.
 import { FLASHLIGHT_MODES } from "../data/balance";
 import type { World } from "../game/World";
+import { ABILITY } from "./abilities";
 
 const HELD = {
   up: ["KeyW", "ArrowUp"],
@@ -21,9 +22,11 @@ function digitOf(code: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** The key line at the bottom of the screen: a runner's, or the villain's by kit. */
 export const CONTROLS_HINT = {
   runner: "WASD — шаг  |  Shift — бег  |  C — тихо  |  мышь — свет  |  R — фонарик, V — луч  |  E — действие  |  1/2/3 — предметы",
-  hunter: "WASD — шаг  |  Shift — бег  |  C — тихо  |  мышь — взгляд  |  R — вспышка  |  E — обыскать укрытие",
+  fox: "WASD — шаг  |  Shift — бег  |  C — тихо  |  мышь — взгляд  |  R — вспышка  |  E — обыскать укрытие",
+  brute: "WASD — шаг  |  Shift — рывок  |  мышь — взгляд  |  R — рёв (гасит фонарики)  |  E — выбить дверь, вскрыть укрытие",
 };
 
 export class InputSystem {
@@ -89,13 +92,14 @@ export class InputSystem {
     }
   }
 
-  /** R: runners toggle the flashlight, the hunter uses its flash. */
+  /** R: runners toggle the flashlight, the villain uses its kit's ability. */
   private useLight(): void {
     const w = this.world, a = w.local;
     if (!w.round.canAct()) return;
-    if (a.role === "hunter") {
-      if (w.foxFlash.trigger(a)) w.toast("ВСПЫШКА!", "key");
-      else w.toast("Вспышка: перезарядка " + Math.ceil(w.foxFlash.cooldown) + "с", "neutral");
+    if (a.kit) {
+      const ab = ABILITY[a.kit];
+      if (w.abilities.use(a)) w.toast(ab.shout, a.kit === "brute" ? "blood" : "key");
+      else w.toast(ab.name + ": перезарядка " + Math.ceil(w.abilities.cooldown(a)) + "с", "neutral");
       return;
     }
     if (!a.flashlight.on && a.flashlight.charge <= 0) { w.toast("Батарейка села — найди новую", "bad"); return; }

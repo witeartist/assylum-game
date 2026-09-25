@@ -10,12 +10,22 @@ export const EXHAUSTED_MULT = 0.78;
 /** Runner bots get a random speed in this range × the runner speeds. */
 export const BOT_SPEED_RANGE: [number, number] = [0.94, 1.06];
 
-/** The hunter patrols at this share of its full (chase) speed. */
+/** The fox patrols at this share of its full (chase) speed. */
 export const HUNTER_WALK = 0.68;
-/** The boss rushes at this multiple of its stalking speed once it has a target. */
+/** The AI brute rushes at this multiple of its stalking speed. */
 export const BOSS_RUSH = 1.9;
-/** Hunter speed multiplier once the boss is awake. */
-export const HUNTER_BOSS_BOOST = 1.1;
+/**
+ * A brute player walks like the fox patrols and lunges (Shift) this much faster than a running
+ * runner, for `time` seconds of stamina. The AI brute is slower: it always knows where you are.
+ */
+export const BRUTE_LUNGE = { speed: 1.05, time: 2 };
+
+/**
+ * The building wakes up `wakeDelay` seconds into the round (difficulty.ts): warnings before it,
+ * then the lamps turn red and `share` of them (never the emergency ones) die one by one over
+ * `over` seconds, and the villains move `boost` times faster.
+ */
+export const WAKE = { warnAt: [30, 20, 10], share: 0.55, over: 60, boost: 1.1 };
 
 /**
  * Stamina, in seconds of running. Running drains 1 per second; rest refills it. At zero the
@@ -48,8 +58,8 @@ export const FUSE_INSERT_TIME = 1.6;
 /** How far runners notice a threat (it must be lit or close, like anything else they see). */
 export const BOT_DANGER_RANGE = TILE * 11;
 
-/** Seeing in the dark: a viewer sees unlit things this close, tiles. */
-export const DARK_SIGHT = { runner: 1.8, hunter: 4.5, boss: 5 };
+/** Seeing in the dark: a runner sees unlit things this close, tiles (villains: by kit, characters.ts). */
+export const DARK_SIGHT = { runner: 1.8 };
 /** Light level above which a thing counts as lit. */
 export const SEE_LIGHT = 0.14;
 
@@ -68,13 +78,21 @@ export const HUNTER_AI = {
   guardTime: 18,
   guardCooldown: 25,
 };
-/** The boss: senses, rush and warnings before it wakes. */
-export const BOSS_AI = { fovHalf: Math.PI * 0.55, hearing: 1.5, rushTime: 4, rushRest: 2.5, warnAt: [30, 20, 10] };
+/** The AI brute: senses (it sees lit runners only this far, tiles — it goes by smell), rush and rest. */
+export const BOSS_AI = { fovHalf: Math.PI * 0.45, sight: 8, hearing: 1.5, rushTime: 3, rushRest: 3 };
 
 /** Breath held in a hiding spot, seconds; refills twice as fast. */
 export const BREATH = { max: 6, refill: 2, hearRange: TILE * 2.6, alertRange: TILE * 4.5 };
 
+/** The fox's R: a burst of light. */
 export const FOX_FLASH = { cooldown: 30, duration: 1, radiusTiles: 9 };
+/**
+ * The brute's R: a roar heard `noise` tiles away that kills the flashlights of runners within
+ * `jamRange` tiles for `jam` seconds.
+ */
+export const ROAR = { cooldown: 30, noise: 14, jamRange: 8, jam: 2.5 };
+/** The brute tears a hiding spot open this fast (the fox searches for HUNTER_AI.checkTime). */
+export const BRUTE_CHECK_TIME = 0.35;
 
 export interface FlashlightMode { label: string; halfAngle: number; rangeTiles: number; }
 /** Flashlight modes 1..3 (index + 1), switched with V. */
@@ -112,5 +130,5 @@ export const ITEMS = { slots: 3, throwTiles: 7, glowstickTime: 90, adrenalineTim
 /** Yoko's whistle cooldown. */
 export const WHISTLE_COOLDOWN = 40;
 
-/** Screen flicker of the lights; raised when the boss wakes up. */
-export const FLICKER = { calm: 0.18, boss: 0.7 };
+/** Screen flicker of the lights; raised when the building wakes up. */
+export const FLICKER = { calm: 0.18, awake: 0.7 };

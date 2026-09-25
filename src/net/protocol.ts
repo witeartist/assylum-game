@@ -1,6 +1,6 @@
 // Every message peers exchange. Clients talk only to the host; the host relays.
 import type { RunnerStatus } from "../core/types";
-import type { CharacterId } from "../data/characters";
+import type { CharacterId, KitId } from "../data/characters";
 import type { DifficultyId } from "../data/difficulty";
 import type { ItemKind } from "../data/items";
 import type { NetState } from "../entities/state";
@@ -10,26 +10,31 @@ export interface PlayerInfo {
   character: CharacterId;
   ready: boolean;
   isHost?: boolean;
+  /** Wants to be the villain, with this kit (null: wants to run). */
+  villain: KitId | null;
 }
 
 export interface StartInfo {
   seed: number;
   difficulty: DifficultyId;
-  /** Peer playing the hunter, or null (then the host runs an AI hunter). */
-  foxPlayerId: string | null;
   players: Record<string, PlayerInfo>;
+  /** Players who are the villain this round (peer id → kit); the rest run. */
+  villains: Record<string, KitId>;
+  /** The villain the host's AI plays when no player is one, or null. */
+  aiVillain: { character: CharacterId; kit: KitId } | null;
 }
 
 /** Lobby phase. */
 export type LobbyMessage =
-  | { type: "join"; character: CharacterId }
+  | { type: "join"; character: CharacterId; villain: KitId | null }
   | { type: "changeChar"; character: CharacterId }
+  | { type: "wish"; villain: KitId | null }
   | { type: "ready"; ready: boolean }
   | { type: "players"; players: Record<string, PlayerInfo> }
   | { type: "charAssigned"; character: CharacterId }
   | ({ type: "start" } & StartInfo);
 
-/** Round phase. `id` is an actor id: a peer id, "ai:fox" or "ai:boss". */
+/** Round phase. `id` is an actor id: a peer id, a bot's or the AI villain's ("ai:villain"). */
 export type GameMessage =
   | ({ type: "pos" } & NetState)                              // client → host: own position
   | { type: "snap"; actors: ({ id: string } & NetState)[] }   // host → clients: everyone's position
@@ -46,7 +51,9 @@ export type GameMessage =
   | { type: "freed"; id: string; by: string }                      // host → clients: a runner broke free
   | { type: "escaped"; id: string }
   | { type: "caught"; id: string; by: string }                // host → clients
-  | { type: "boss" }                                          // host → clients
+  | { type: "wake" }                                          // host → clients: the building woke up
+  | { type: "ability"; by: string; x: number; y: number }     // a villain used its R (flash or roar) here
+  | { type: "ai"; character: CharacterId; kit: KitId; x: number; y: number } // host → clients: the AI took over a villain who left
   | { type: "left"; id: string }                              // host → clients
   | { type: "end"; results: Record<string, RunnerStatus> };   // host → clients
 
@@ -55,7 +62,7 @@ export type PingMessage = { type: "ping" };
 
 export type Message = LobbyMessage | GameMessage | PingMessage;
 
-const GAME_TYPES = new Set<string>(["pos", "snap", "key", "door", "hide", "item", "gate", "throw", "fuse", "fuseDrop", "noise", "check", "freed", "escaped", "caught", "boss", "left", "end"]);
+const GAME_TYPES = new Set<string>(["pos", "snap", "key", "door", "hide", "item", "gate", "throw", "fuse", "fuseDrop", "noise", "check", "freed", "escaped", "caught", "wake", "ability", "ai", "left", "end"]);
 
 export function isGameMessage(m: Message): m is GameMessage {
   return GAME_TYPES.has(m.type);

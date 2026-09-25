@@ -1,57 +1,57 @@
-// Pacing: counts down to the boss, warns before it wakes (the lights begin to stutter, the
-// building groans) and wakes it up.
-import { CHARACTERS, BOSS_ID } from "../data/characters";
-import { BOSS_AI, FLICKER, HUNTER_BOSS_BOOST } from "../data/balance";
-import type { Actor } from "../entities/Actor";
+// Pacing: the building wakes up. It counts down, warns (the lights begin to stutter, the walls
+// groan) and wakes: the lamps turn red and die one after another (lighting.ts), the villains move
+// faster. Every peer counts down for the HUD and the warnings; the authority decides the moment.
+import { FLICKER, WAKE } from "../data/balance";
 import type { World } from "../game/World";
-import { spawnBoss } from "../game/spawn";
 
 const WARNINGS: Record<number, string> = {
   30: "Где-то внизу скрежещет металл…",
-  20: "Лампы дрожат. Что-то просыпается.",
-  10: "Стены гудят. ОНО ИДЁТ.",
+  20: "Лампы дрожат. Здание просыпается.",
+  10: "Стены гудят. СВЕТ СЕЙЧАС ПОГАСНЕТ.",
 };
 
 export class Director {
-  bossSpawned = false;
-  boss: Actor | null = null;
-  private bossTimer = 0;
+  /** The building is awake. */
+  awake = false;
+  /** Seconds since it woke up. */
+  awakeFor = 0;
+  private timer = 0;
   private warned = new Set<number>();
 
   constructor(private world: World) {}
 
-  /** Whole seconds until the boss wakes up. */
-  get bossCountdown(): number {
-    return Math.max(0, Math.ceil(this.world.diff.bossDelay - this.bossTimer));
+  /** Whole seconds until the building wakes up. */
+  get countdown(): number {
+    return Math.max(0, Math.ceil(this.world.diff.wakeDelay - this.timer));
   }
 
   update(dt: number): void {
-    if (this.bossSpawned) return;
     const w = this.world;
-    // Every peer counts down for the HUD and the warnings; only the authority spawns.
-    this.bossTimer += dt;
-    const left = w.diff.bossDelay - this.bossTimer;
-    const first = BOSS_AI.warnAt[0];
-    if (left < first) w.lighting.flickerStrength = FLICKER.calm + (FLICKER.boss - FLICKER.calm) * 0.6 * (1 - left / first);
-    for (const at of BOSS_AI.warnAt) {
+    if (this.awake) { this.awakeFor += dt; return; }
+    this.timer += dt;
+    const left = w.diff.wakeDelay - this.timer;
+    const first = WAKE.warnAt[0];
+    if (left < first) w.lighting.flickerStrength = FLICKER.calm + (FLICKER.awake - FLICKER.calm) * 0.6 * (1 - left / first);
+    for (const at of WAKE.warnAt) {
       if (left > at || this.warned.has(at)) continue;
       this.warned.add(at);
       w.toast(WARNINGS[at] ?? "…", at <= 10 ? "blood" : "warn");
       w.shake(300 + (30 - at) * 20, 0.004 + (30 - at) * 0.0004);
     }
-    if (this.bossTimer >= w.diff.bossDelay && w.isAuthority) this.spawnBoss(false);
+    if (left <= 0 && w.isAuthority) this.wake(false);
   }
 
-  spawnBoss(remote: boolean): void {
-    if (this.bossSpawned) return;
+  /** The single place the building wakes (the authority's clock, or its message). */
+  wake(remote: boolean): void {
+    if (this.awake) return;
     const w = this.world;
-    this.bossSpawned = true;
-    for (const a of w.actors) if (a.role === "hunter" && a.control === "ai") a.speedMul = HUNTER_BOSS_BOOST;
-    w.lighting.flickerStrength = FLICKER.boss;
-    this.boss = spawnBoss(w);
-    w.events.emit("banner", { text: CHARACTERS[BOSS_ID].name.toUpperCase() + " ПРОСНУЛАСЬ", tone: "blood" });
+    this.awake = true;
+    // Each peer speeds up the villains it simulates.
+    for (const a of w.threats()) if (a.control !== "remote") a.speedMul = WAKE.boost;
+    w.lighting.flickerStrength = FLICKER.awake;
+    w.events.emit("banner", { text: "ЗДАНИЕ ПРОСНУЛОСЬ", tone: "blood" });
     w.events.emit("screenFlash", { color: 0x960000, alpha: 0.5, ms: 2000 });
     w.shake(500, 0.02);
-    w.events.emit("bossSpawned", { remote });
+    w.events.emit("buildingAwake", { remote });
   }
 }

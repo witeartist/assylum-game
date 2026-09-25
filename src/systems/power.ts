@@ -115,7 +115,7 @@ export class Power {
       w.events.emit("powerRestored", {});
       w.objectives.tryOpenExit();
     } else {
-      w.toast("Предохранитель " + this.inserted + "/" + this.total + (by && by !== w.local ? " — " + by.def.name : ""), "key");
+      w.toast("Предохранитель " + this.inserted + "/" + this.total + (by && by !== w.local ? " — " + by.displayName : ""), "key");
     }
     return true;
   }

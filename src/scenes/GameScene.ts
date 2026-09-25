@@ -2,12 +2,12 @@
 import Phaser from "phaser";
 import { WORLD_W, WORLD_H } from "../core/constants";
 import { randomSeed } from "../core/rng";
-import { CHARACTERS, RUNNER_IDS, type CharacterId } from "../data/characters";
+import type { Role } from "../core/types";
+import { HERO_IDS, KIT_IDS, type CharacterId, type KitId } from "../data/characters";
 import { DIFFICULTIES, type DifficultyId } from "../data/difficulty";
-import { FOX_FLASH } from "../data/balance";
 import { session } from "../net/session";
 import { World, type NetMode } from "../game/World";
-import { spawnHunterAI, spawnLocalPlayer, spawnRemotePlayer, spawnRunnerBot } from "../game/spawn";
+import { runnerPart, spawnLocalPlayer, spawnRemotePlayer, spawnRunnerBot, spawnVillainAI, villainPart } from "../game/spawn";
 import { generateLevel } from "../world/levelgen";
 import { CollisionLayer } from "../world/collision";
 import { furnitureTiles } from "../world/level";
@@ -21,7 +21,7 @@ import { Footprints } from "../render/footprints";
 import { Soundscape } from "../systems/sound";
 import { LIGHTING_PIPELINE, LightingPipeline } from "../render/lighting/LightingPipeline";
 import { Lighting } from "../systems/lighting";
-import { FoxFlash } from "../systems/foxFlash";
+import { Abilities } from "../systems/abilities";
 import { Hiding } from "../systems/hiding";
 import { Doors } from "../systems/doors";
 import { Objectives } from "../systems/objectives";
@@ -40,8 +40,12 @@ import { Scent } from "../ai/scent";
 import { updateCatches } from "../systems/catches";
 import { bindEffects } from "../systems/effects";
 
+/** A solo round: who you play, as whom, on which difficulty (multiplayer takes it from the session). */
 export interface GameSceneData {
   character: CharacterId;
+  role: Role;
+  /** The villain's kit: yours, or the one a runner plays against; null — pick at random. */
+  kit: KitId | null;
   difficulty: DifficultyId;
   /** Replay a particular level (solo); random otherwise. */
   seed?: number;
@@ -99,21 +103,28 @@ export class GameScene extends Phaser.Scene {
 
     if (start) {
       for (const [id, p] of Object.entries(start.players)) {
-        if (id === session.localId) spawnLocalPlayer(w, id, p.character);
-        else spawnRemotePlayer(w, id, p.character);
+        const kit = start.villains[id];
+        const part = kit ? villainPart(p.character, kit) : runnerPart(p.character);
+        if (id === session.localId) spawnLocalPlayer(w, id, part);
+        else spawnRemotePlayer(w, id, part);
       }
-      if (!start.foxPlayerId) spawnHunterAI(w);
+      if (start.aiVillain) spawnVillainAI(w, start.aiVillain.character, start.aiVillain.kit);
     } else {
-      const character = this.params.character;
-      spawnLocalPlayer(w, "local", character);
-      RUNNER_IDS.filter(id => id !== character)
-        .forEach((id, i) => spawnRunnerBot(w, id, level.npcSpawns[i % level.npcSpawns.length]));
-      if (CHARACTERS[character].role !== "hunter") spawnHunterAI(w);
+      // Solo: the other heroes are bots; a runner meets one of them infected.
+      const { character, role } = this.params;
+      const kit = this.params.kit ?? w.rng.pick(KIT_IDS);
+      spawnLocalPlayer(w, "local", role === "hunter" ? villainPart(character, kit) : runnerPart(character));
+      let others = HERO_IDS.filter(id => id !== character);
+      if (role === "runner") {
+        const villain = w.rng.pick(others);
+        spawnVillainAI(w, villain, kit);
+        others = others.filter(id => id !== villain);
+      }
+      others.forEach((id, i) => spawnRunnerBot(w, id, level.npcSpawns[i % level.npcSpawns.length]));
     }
-    // A human hunter starts with the flash ready; the AI hunter waits a full cooldown.
-    w.foxFlash = new FoxFlash(w.local.role === "hunter" ? 0 : FOX_FLASH.cooldown);
+    w.abilities = new Abilities(w);
 
-    w.round = new Round(w);
+    w.round = new Round(w, this.params.kit);
     w.director = new Director(w);
     w.vitals = new Vitals(w);
     w.interact = new Interact(w);
@@ -157,7 +168,7 @@ export class GameScene extends Phaser.Scene {
     w.objectives.update(dt);
     updateCatches(w);
     w.director.update(dt);
-    w.foxFlash.update(dt);
+    w.abilities.update(dt);
     w.noise.update(dt);
     w.scent.update(dt);
     w.vision.update(dt);

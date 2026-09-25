@@ -477,7 +477,7 @@ function placeGates(rng: Rng, grid: CharGrid, used: Set<number>, skip: Set<numbe
   return gates;
 }
 
-type Spawns = Pick<LevelData, "playerSpawn" | "foxSpawn" | "npcSpawns" | "exitTile" | "bossSpawn" | "keyTiles" | "lockedDoors" | "fuseTiles" | "fuseBox" | "items">;
+type Spawns = Pick<LevelData, "playerSpawn" | "villainSpawns" | "npcSpawns" | "exitTile" | "keyTiles" | "lockedDoors" | "fuseTiles" | "fuseBox" | "items">;
 
 /** Hiding spots, lights, blood and furniture — the last step of every level. */
 function furnish(rng: Rng, seed: number, grid: CharGrid, rooms: Room[], plan: Plan, used: Set<number>, spawns: Spawns, startRoom: Room): LevelData {
@@ -510,9 +510,10 @@ function tryLevel(rng: Rng, seed: number, o: Required<LevelOptions>, plan: Plan,
   const pc = roomCenter(playerRoom);
   const farFromPlayer = (a: Room, b: Room) => manhattan(roomCenter(b), pc) - manhattan(roomCenter(a), pc);
 
-  const foxRoom = rooms.filter(r => r !== playerRoom).sort(farFromPlayer)[0];
-  const foxSpawn = pickRoomTile(rng, grid, foxRoom, used);
-  const others = rng.shuffle(rooms.filter(r => r !== playerRoom && r !== foxRoom));
+  // The villain's lair: the room farthest from the runners' start.
+  const lair = rooms.filter(r => r !== playerRoom).sort(farFromPlayer)[0];
+  const lairSpawn = pickRoomTile(rng, grid, lair, used);
+  const others = rng.shuffle(rooms.filter(r => r !== playerRoom && r !== lair));
   if (others.length < o.keys + 8) return null;
   const npcRooms = others.slice(0, 4);
   const npcSpawns = npcRooms.map(r => pickRoomTile(rng, grid, r, used));
@@ -526,10 +527,11 @@ function tryLevel(rng: Rng, seed: number, o: Required<LevelOptions>, plan: Plan,
   const ec = roomCenter(exitRoom);
   const farFromExit = (a: Room, b: Room) => manhattan(roomCenter(b), ec) - manhattan(roomCenter(a), ec);
 
-  const bossRoom = others.filter(r => r !== exitRoom && !npcRooms.includes(r)).sort(farFromExit)[0] ?? foxRoom;
-  const bossSpawn = pickRoomTile(rng, grid, bossRoom, used);
+  // A second villain starts in the next farthest room.
+  const lair2 = others.filter(r => r !== exitRoom && !npcRooms.includes(r)).sort(farFromPlayer)[0] ?? lair;
+  const villainSpawns = [lairSpawn, pickRoomTile(rng, grid, lair2, used)];
 
-  const keyRooms = rng.shuffle(others.filter(r => r !== exitRoom && r !== bossRoom && !npcRooms.includes(r))).slice(0, o.keys);
+  const keyRooms = rng.shuffle(others.filter(r => r !== exitRoom && r !== lair2 && !npcRooms.includes(r))).slice(0, o.keys);
   if (keyRooms.length < o.keys) return null;
   const keyTiles = keyRooms.map(r => pickRoomTile(rng, grid, r, used));
 
@@ -537,7 +539,7 @@ function tryLevel(rng: Rng, seed: number, o: Required<LevelOptions>, plan: Plan,
   const openDist = distanceMap(WalkGrid.fromRows(grid), playerSpawn);
   if (![exitTile, ...keyTiles].every(t => distanceTo(openDist, t) >= 0)) return null;
 
-  const mustReach = [foxSpawn, bossSpawn, exitTile, ...npcSpawns];
+  const mustReach = [...villainSpawns, exitTile, ...npcSpawns];
   const lockedDoors = pickLockedDoors(rng, grid, keyRooms, keyTiles, playerSpawn, mustReach, used, plan.breaches);
   if (lockedDoors.length < Math.min(MAX_LOCKED_DOORS, o.keys)) return null;
   const closed = WalkGrid.fromRows(grid).withSolid(lockedDoors.flatMap(d => d.doorTiles));
@@ -563,7 +565,7 @@ function tryLevel(rng: Rng, seed: number, o: Required<LevelOptions>, plan: Plan,
   const items = placeItems(rng, grid, rooms, o.items, used);
 
   return furnish(rng, seed, grid, rooms, plan, used,
-    { playerSpawn, foxSpawn, npcSpawns, exitTile, bossSpawn, keyTiles, lockedDoors, fuseTiles, fuseBox, items }, playerRoom);
+    { playerSpawn, villainSpawns, npcSpawns, exitTile, keyTiles, lockedDoors, fuseTiles, fuseBox, items }, playerRoom);
 }
 
 function withDefaults(o: LevelOptions): Required<LevelOptions> {

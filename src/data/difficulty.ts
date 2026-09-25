@@ -6,12 +6,12 @@ export interface Difficulty {
   id: DifficultyId;
   label: string;
   tone: Tone;
-  /** Hunter full (chase) speed, px/s. It patrols slower. */
+  /** The fox's full (chase) speed, px/s. It patrols slower. */
   foxSpeed: number;
-  /** Boss stalking speed, px/s. It rushes faster. */
+  /** The brute's stalking speed, px/s. It rushes faster. */
   bossSpeed: number;
-  /** Seconds until the boss wakes up. */
-  bossDelay: number;
+  /** Seconds until the building wakes up (balance.ts WAKE). */
+  wakeDelay: number;
   keyCount: number;
   /** Fuses to find and plug into the fuse box before the exit has power (0 = none). */
   fuseCount: number;
@@ -28,9 +28,9 @@ export interface Difficulty {
 }
 
 export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
-  easy:   { id: "easy",   label: "ЛЕГКО",  tone: "good", foxSpeed: 108, bossSpeed: 48, bossDelay: 240, keyCount: 3, fuseCount: 2, itemCount: 16, sight: 13, foxSight: 11, hearing: 0.8,  reaction: 0.6 },
-  normal: { id: "normal", label: "НОРМА",  tone: "warn", foxSpeed: 118, bossSpeed: 58, bossDelay: 180, keyCount: 4, fuseCount: 3, itemCount: 14, sight: 11, foxSight: 14, hearing: 1,    reaction: 0.4 },
-  hard:   { id: "hard",   label: "СЛОЖНО", tone: "bad",  foxSpeed: 128, bossSpeed: 70, bossDelay: 130, keyCount: 5, fuseCount: 4, itemCount: 11, sight: 9,  foxSight: 17, hearing: 1.25, reaction: 0.25 },
+  easy:   { id: "easy",   label: "ЛЕГКО",  tone: "good", foxSpeed: 108, bossSpeed: 48, wakeDelay: 240, keyCount: 3, fuseCount: 2, itemCount: 16, sight: 13, foxSight: 11, hearing: 0.8,  reaction: 0.6 },
+  normal: { id: "normal", label: "НОРМА",  tone: "warn", foxSpeed: 118, bossSpeed: 58, wakeDelay: 180, keyCount: 4, fuseCount: 3, itemCount: 14, sight: 11, foxSight: 14, hearing: 1,    reaction: 0.4 },
+  hard:   { id: "hard",   label: "СЛОЖНО", tone: "bad",  foxSpeed: 128, bossSpeed: 70, wakeDelay: 130, keyCount: 5, fuseCount: 4, itemCount: 11, sight: 9,  foxSight: 17, hearing: 1.25, reaction: 0.25 },
 };
 
 export const DIFFICULTY_ORDER: DifficultyId[] = ["easy", "normal", "hard"];

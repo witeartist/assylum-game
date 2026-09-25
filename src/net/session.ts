@@ -1,11 +1,12 @@
-// PeerJS session: hosting/joining a room, the lobby (characters, ready flags) and message
-// transport during the round. Scenes subscribe to `session.events`.
+// PeerJS session: hosting/joining a room, the lobby (heroes, who wants to be the villain, ready
+// flags) and message transport during the round. Scenes subscribe to `session.events`.
 import Peer from "peerjs";
 import type { DataConnection } from "peerjs";
 import { EventBus } from "../core/events";
 import { randomSeed } from "../core/rng";
-import { HUNTER_ID, PLAYABLE_IDS, RUNNER_IDS, isCharacterId, type CharacterId } from "../data/characters";
+import { HERO_IDS, isCharacterId, isKitId, type CharacterId, type KitId } from "../data/characters";
 import type { DifficultyId } from "../data/difficulty";
+import { pickVillains } from "../game/roundRules";
 import { isGameMessage, type GameMessage, type Message, type PlayerInfo, type StartInfo } from "./protocol";
 
 export interface SessionEvents {
@@ -68,7 +69,7 @@ class Session {
   /** A multiplayer round is running (or about to). */
   get active(): boolean { return this.start !== null; }
 
-  host(character: CharacterId): Promise<string> {
+  host(character: CharacterId, villain: KitId | null): Promise<string> {
     return new Promise((resolve, reject) => {
       const code = roomCode();
       const peer = new Peer("assylum-host-" + code, peerOptions());
@@ -77,7 +78,7 @@ class Session {
         this.isHost = true;
         this.roomId = code;
         this.localId = id;
-        this.players = { [id]: { character, ready: true, isHost: true } };
+        this.players = { [id]: { character, ready: true, isHost: true, villain } };
         peer.on("connection", (conn) => this.acceptClient(peer, conn));
         this.startHeartbeat();
         resolve(code);
@@ -86,7 +87,7 @@ class Session {
     });
   }
 
-  join(code: string, character: CharacterId): Promise<void> {
+  join(code: string, character: CharacterId, villain: KitId | null): Promise<void> {
     return new Promise((resolve, reject) => {
       const peer = new Peer("assylum-player-" + code + "-" + Math.random().toString(36).slice(2, 7), peerOptions());
       peer.on("open", (id) => {
@@ -98,7 +99,7 @@ class Session {
         conn.on("open", () => {
           this.hostConn = conn;
           this.lastSeen.set("host", Date.now());
-          conn.send({ type: "join", character } satisfies Message);
+          conn.send({ type: "join", character, villain } satisfies Message);
           conn.on("data", (data) => {
             if (this.peer !== peer) return;
             this.lastSeen.set("host", Date.now());
@@ -178,14 +179,24 @@ class Session {
     }
   }
 
+  /** Ask to be the villain with this kit, or to run (null). */
+  changeWish(villain: KitId | null): void {
+    if (!this.localId) return;
+    if (this.isHost) {
+      this.players[this.localId].villain = villain;
+      this.broadcastPlayers();
+    } else {
+      this.hostConn?.send({ type: "wish", villain } satisfies Message);
+    }
+  }
+
   setReady(ready: boolean): void {
     this.hostConn?.send({ type: "ready", ready } satisfies Message);
   }
 
-  /** Host: start the round for everyone. */
+  /** Host: start the round for everyone (and decide who is the villain). */
   startGame(difficulty: DifficultyId): StartInfo {
-    const foxPlayerId = Object.entries(this.players).find(([, p]) => p.character === HUNTER_ID)?.[0] ?? null;
-    const info: StartInfo = { seed: randomSeed(), difficulty, foxPlayerId, players: this.players };
+    const info: StartInfo = { seed: randomSeed(), difficulty, players: this.players, ...pickVillains(this.players, Math.random) };
     this.start = info;
     this.broadcast({ type: "start", ...info });
     return info;
@@ -239,9 +250,9 @@ class Session {
     switch (msg.type) {
       case "join": {
         const used = this.usedCharacters(from);
-        const wanted = isCharacterId(msg.character) && PLAYABLE_IDS.includes(msg.character) ? msg.character : RUNNER_IDS[0];
-        const character = used.has(wanted) ? RUNNER_IDS.find(c => !used.has(c)) ?? wanted : wanted;
-        this.players[from] = { character, ready: false };
+        const wanted = isCharacterId(msg.character) ? msg.character : HERO_IDS[0];
+        const character = used.has(wanted) ? HERO_IDS.find(c => !used.has(c)) ?? wanted : wanted;
+        this.players[from] = { character, ready: false, villain: isKitId(msg.villain) ? msg.villain : null };
         conn?.send({ type: "charAssigned", character } satisfies Message);
         this.broadcastPlayers();
         break;
@@ -249,13 +260,17 @@ class Session {
       case "changeChar": {
         const p = this.players[from];
         if (!p) break;
-        if (isCharacterId(msg.character) && PLAYABLE_IDS.includes(msg.character) && !this.usedCharacters(from).has(msg.character)) {
+        if (isCharacterId(msg.character) && !this.usedCharacters(from).has(msg.character)) {
           p.character = msg.character;
         }
         conn?.send({ type: "charAssigned", character: p.character } satisfies Message);
         this.broadcastPlayers();
         break;
       }
+      case "wish":
+        if (this.players[from]) this.players[from].villain = isKitId(msg.villain) ? msg.villain : null;
+        this.broadcastPlayers();
+        break;
       case "ready":
         if (this.players[from]) this.players[from].ready = !!msg.ready;
         this.broadcastPlayers();

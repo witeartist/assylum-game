@@ -1,13 +1,13 @@
 // The round: who is still in play, catches and escapes (single implementations), spectating
 // after you're out, and the end of the round.
-import { HUNTER_ID, CHARACTERS } from "../data/characters";
+import type { KitId } from "../data/characters";
 import { BREAK_FREE } from "../data/balance";
 import { session } from "../net/session";
 import type { Actor } from "../entities/Actor";
 import { NET_FLAG } from "../entities/state";
 import type { World } from "../game/World";
 import { decideRoundEnd, outcomeFor, RoundTally, type LocalDone, type RunnerCounts } from "../game/roundRules";
-import type { RunnerStatus } from "../core/types";
+import type { Role, RunnerStatus } from "../core/types";
 
 const END_DELAY = 600;
 const HOST_LINGER = 1500;
@@ -16,12 +16,14 @@ export interface ResultData extends RunnerCounts {
   outcome: ReturnType<typeof outcomeFor>;
   multiplayer: boolean;
   character: string;
+  role: Role;
+  /** The local villain's kit; for a runner, the villain's kit they asked for (null: random). */
+  kit: KitId | null;
   difficulty: string;
   catcherName: string;
   keysCollected: number;
   keysTotal: number;
   elapsed: number;
-  bossSpawned: boolean;
 }
 
 export class Round {
@@ -29,14 +31,17 @@ export class Round {
   localDone: LocalDone = null;
   finishScheduled = false;
   finished = false;
-  catcherName: string = CHARACTERS[HUNTER_ID].name;
+  /** Who caught the local runner (the villain until someone actually does). */
+  catcherName: string;
   /** Text for the spectator line, or null when not spectating. */
   spectateText: string | null = null;
   private spectateIdx = 0;
   private readonly startTime: number;
 
-  constructor(private world: World) {
+  /** `wanted`: the villain's kit a runner asked for (null: random), kept for "again". */
+  constructor(private world: World, private wanted: KitId | null = null) {
     for (const r of world.runners()) this.tally.add(r.id);
+    this.catcherName = world.threats()[0]?.displayName ?? "?";
     this.startTime = world.scene.time.now;
   }
 
@@ -50,7 +55,7 @@ export class Round {
     if (!a.inPlay || a.role !== "runner" || this.finishScheduled || by.stunned > 0) return;
     const canFree = a.control === "remote" ? (a.netFlags & NET_FLAG.canBreakFree) !== 0 : a.breakFree > 0 || w.items.has(a, "sedative");
     if (canFree) this.breakFree(a, by);
-    else this.catchRunner(a, by.def.name);
+    else this.catchRunner(a, by.displayName);
   }
 
   /** The runner slips out of the monster's hands: it is stunned, the runner gets a head start. */
@@ -65,7 +70,7 @@ export class Round {
       a.exhausted = false;
     }
     if (by && by.control !== "remote") { by.stunned = BREAK_FREE.stun; by.halt(); }
-    w.toast(a === w.local ? "УДАЛОСЬ ВЫРВАТЬСЯ! БЕГИ!" : a.def.name + " вырывается из лап!", "warn");
+    w.toast(a === w.local ? "УДАЛОСЬ ВЫРВАТЬСЯ! БЕГИ!" : a.displayName + " вырывается из лап!", "warn");
     w.shake(250, 0.012);
     w.events.emit("brokeFree", { actor: a, by: by?.id ?? "", remote });
   }
@@ -81,7 +86,7 @@ export class Round {
       w.doors.closeMinigame(false);
       w.toast("ВАС ПОЙМАЛИ", "bad");
     } else {
-      w.toast("Поймали: " + a.def.name, "bad");
+      w.toast("Поймали: " + a.displayName, "bad");
     }
     w.events.emit("runnerCaught", { actor: a, by, remote });
     this.checkEnd();
@@ -96,7 +101,7 @@ export class Round {
       this.localDone = "escaped";
       if (w.multiplayer) w.toast("ВЫ СБЕЖАЛИ! Ждём остальных…", "good");
     } else {
-      w.toast("На свободе: " + a.def.name, "good");
+      w.toast("На свободе: " + a.displayName, "good");
     }
     w.events.emit("runnerEscaped", { actor: a, remote });
     this.checkEnd();
@@ -108,7 +113,7 @@ export class Round {
     if (!a.inPlay) return;
     this.tally.set(a.id, "left");
     a.retire("left");
-    w.toast("Игрок отключился: " + a.def.name, "neutral");
+    w.toast("Игрок отключился: " + a.displayName, "neutral");
     w.events.emit("runnerLeft", { actor: a });
     this.checkEnd();
   }
@@ -161,7 +166,7 @@ export class Round {
     const target = this.spectateTarget();
     if (target) {
       this.world.camera.follow(target);
-      this.spectateText = "👁 НАБЛЮДЕНИЕ: " + target.def.name + "  [Tab — переключить | ESC — выход]";
+      this.spectateText = "👁 НАБЛЮДЕНИЕ: " + target.displayName + "  [Tab — переключить | ESC — выход]";
     } else {
       this.spectateText = this.world.multiplayer ? "Ожидание конца раунда…  [ESC — выход]" : null;
     }
@@ -201,12 +206,13 @@ export class Round {
       outcome: outcomeFor(w.local.role, this.localDone, counts),
       multiplayer: w.multiplayer,
       character: w.local.def.id,
+      role: w.local.role,
+      kit: w.local.kit ?? this.wanted,
       difficulty: w.diff.id,
       catcherName: this.catcherName,
       keysCollected: w.objectives.collected,
       keysTotal: w.objectives.total,
       elapsed: Math.floor((w.scene.time.now - this.startTime) / 1000),
-      bossSpawned: w.director.bossSpawned,
     };
     // The host lingers a moment so the round results reach everyone.
     if (w.multiplayer) session.leave(session.isHost ? HOST_LINGER : 0);
