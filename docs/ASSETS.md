@@ -259,11 +259,11 @@
 
 | Файл | Клетки | Размер | `<OBJECT>` |
 |---|---|---|---|
-| `door_wood_h.png` | 1×1 | 1024×1536 | old wooden hospital door, closed, front view, small wired-glass window at eye level, chipped white-green paint, dented metal kick plate, in a horizontal wall |
-| `door_wood_h2.png` | 2×1 | 1536×1024 | the same style, a double swing door (two leaves), closed, two round wired-glass windows |
+| `door_wood_h.png` | 1×⅞ | 1536×1344 | old wooden hospital door, closed, front view, small wired-glass window, chipped white-green paint, dented metal kick plate, squat proportions (wider than tall: walls in this view are low) |
+| `door_wood_h2.png` | 2×⅞ | 2048×896 | the same style, a double swing door (two leaves), closed, two round wired-glass windows, squat |
 | `door_wood_h_open.png` | ⅕×1 | 1024×1536 | the same door swung fully open, seen edge-on: a thin vertical door leaf standing against the frame |
 | `door_wood_v.png` | ⅕×1 | 1024×1536 | the same door closed in a vertical wall, seen edge-on from the side: a thin tall slab with a handle |
-| `door_wood_v_open.png` | 1×1 | 1024² | the same door swung open into the room, seen from the 3/4 camera, the leaf sticking out perpendicular to the wall |
+| `door_wood_v_open.png` | 1×⅞ | 1536×1344 | the same door swung open 90° out of a wall running up–down: the leaf stands across the floor and we see its face, squat like `door_wood_h`, hinge on the left |
 
 **H2. Щиток и шкафчики (P1)** — папка `interactive/`.
 

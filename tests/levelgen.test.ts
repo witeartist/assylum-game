@@ -3,6 +3,8 @@ import { DIFFICULTIES } from "../src/data/difficulty";
 import { WalkGrid, distanceMap, distanceTo } from "../src/world/grid";
 import { generateLevel, generateFallbackLevel, type LevelOptions } from "../src/world/levelgen";
 import { blockingFurnitureTiles, type LevelData } from "../src/world/level";
+import { THIN, levelWallShapes } from "../src/world/walls";
+import { MAP_W, MAP_H } from "../src/core/constants";
 
 /** Every rule a level must satisfy to be winnable; returns the violations. */
 function problems(L: LevelData, o: LevelOptions): string[] {
@@ -79,6 +81,23 @@ describe("level generator", () => {
     for (const p of L.furniture) {
       if (p.key === "props/canteen_table") expect(wall(p.col, p.row - 1) || wall(p.col - 1, p.row), p.key).toBe(false);
       if (p.key === "props/morgue_fridge" || p.key === "props/shelf_boxes") expect(wall(p.col, p.row - 1), p.key).toBe(true);
+    }
+  });
+
+  it("stands rooms wall to wall: most walls between spaces are thin partitions", () => {
+    for (const seed of [11, 22, 33, 44, 55]) {
+      const L = generateLevel(seed * 7919, NORMAL);
+      const codes = levelWallShapes(L);
+      const floor = (c: number, r: number) => L.rows[r]?.[c] !== undefined && L.rows[r][c] !== "#";
+      let byFloor = 0, thin = 0;
+      for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
+        if (L.rows[r][c] !== "#" || ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => floor(c + dc, r + dr))) continue;
+        byFloor++;
+        if (codes[r * MAP_W + c] >= THIN) thin++;
+      }
+      expect(thin / byFloor, `seed ${seed * 7919}`).toBeGreaterThan(0.4);
+      // Holes are knocked through the one wall two rooms share: floor on both sides.
+      for (const t of L.breaches) expect(floor(t.col - 1, t.row) && floor(t.col + 1, t.row), `breach ${t.col},${t.row}`).toBe(true);
     }
   });
 

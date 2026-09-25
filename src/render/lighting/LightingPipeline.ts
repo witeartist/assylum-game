@@ -7,6 +7,7 @@ import { dist } from "../../core/geom";
 import type { World } from "../../game/World";
 import { quality, RES, VIEW_ZOOM } from "../display";
 import type { CameraRig } from "../cameraRig";
+import { THIN_WALL } from "../../world/walls";
 import { COMPOSITE_FRAG, LIGHT_FRAG, MAX_LIGHTS } from "./shaders";
 
 export const LIGHTING_PIPELINE = "AssylumLighting";
@@ -20,8 +21,9 @@ const HAZE: [number, number, number] = [1.0, 0.9, 0.7];
 export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
   world: World | null = null;
   rig: CameraRig | null = null;
-  /** Brightness of wall tops relative to floors. */
+  /** Brightness of wall tops relative to floors (thin partitions a little brighter, to read as lines). */
   topLight = 0.55;
+  thinTopLight = 0.9;
   /** Screenshot mode: light everywhere (even out of sight) and every room lit. Never in play. */
   ambient: [number, number, number] = [0, 0, 0];
   photo = false;
@@ -55,7 +57,11 @@ export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipe
     const gl = this.gl;
     if (w.sight.version !== this.occVersion) {
       const s = w.sight.solid;
-      for (let i = 0; i < s.length; i++) { this.occPixels[i * 4] = s[i] ? (w.doorish.has(i) ? 153 : 255) : 0; this.occPixels[i * 4 + 3] = 255; }
+      for (let i = 0; i < s.length; i++) {
+        this.occPixels[i * 4] = s[i] ? (w.doorish.has(i) ? 153 : 255) : 0;
+        this.occPixels[i * 4 + 1] = w.walls[i];
+        this.occPixels[i * 4 + 3] = 255;
+      }
       this.occ!.update(this.occPixels, MAP_W, MAP_H, false, gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.NEAREST, gl.NEAREST, gl.RGBA);
       this.occVersion = w.sight.version;
     }
@@ -87,11 +93,13 @@ export class LightingPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipe
     this.set2f("uMapSize", MAP_W, MAP_H, lightShader);
     this.set1f("uTile", TILE, lightShader);
     this.set1f("uWallH", WALL_HEIGHT, lightShader);
+    this.set1f("uThin", THIN_WALL / TILE, lightShader);
     this.set4f("uView", view.x, view.y, view.width, view.height, lightShader);
     this.set1f("uFlipY", FLIP_Y, lightShader);
     this.set2f("uViewer", viewer.x, viewer.y, lightShader);
     this.set1f("uSight", w.vision.sightRange, lightShader);
     this.set1f("uTopLight", this.topLight, lightShader);
+    this.set1f("uThinTop", this.thinTopLight, lightShader);
     this.set3f("uAmbient", this.ambient[0], this.ambient[1], this.ambient[2], lightShader);
     this.set1f("uPhoto", this.photo ? 1 : 0, lightShader);
     this.set1f("uSoft", quality.softShadows ? SOFT_SHADOW : 0, lightShader);

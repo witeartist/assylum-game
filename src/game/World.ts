@@ -9,6 +9,7 @@ import type { Difficulty } from "../data/difficulty";
 import type { Tone } from "../ui/theme";
 import { WalkGrid } from "../world/grid";
 import { blockingFurnitureTiles, buildRoomLookup, type LevelData, type Room } from "../world/level";
+import { levelWallShapes } from "../world/walls";
 import type { Actor } from "../entities/Actor";
 import type { CollisionLayer } from "../world/collision";
 import type { Objectives } from "../systems/objectives";
@@ -71,6 +72,8 @@ export class World {
   readonly sight: WalkGrid;
   /** Solid tiles drawn as doors (locked doors, the exit): lit like a wall front, not a wall top. */
   readonly doorish = new Set<number>();
+  /** What each wall or door covers: whole tiles or thin partitions (see walls.ts). */
+  readonly walls: Uint8Array;
   readonly rng: Rng;
   readonly actors: Actor[] = [];
   /** Which bot is going for which goal ("key:2" → bot), so they split the work. */
@@ -102,7 +105,9 @@ export class World {
     readonly diff: Difficulty,
     readonly net: NetMode,
   ) {
+    this.walls = levelWallShapes(level);
     this.sight = WalkGrid.fromRows(level.rows).withSolid(level.lockedDoors.flatMap(d => d.doorTiles));
+    this.sight.shape = this.walls;
     this.grid = this.sight.withSolid(blockingFurnitureTiles(level));
     for (const d of level.lockedDoors) for (const t of d.doorTiles) this.doorish.add(tileIndex(t.col, t.row));
     const e = level.exitTile;

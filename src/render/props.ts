@@ -60,24 +60,35 @@ export const PROP_ART: Record<string, () => HTMLCanvasElement> = {
     ctx.fillStyle = "#33ff66"; ctx.fillRect(44, 12, 32, 9);
   }),
   // Wooden ward doors: front view (in a left–right wall), edge-on (in an up–down wall), and open.
-  "interactive/door_wood_h": () => box(40, 6, 54, "#4a3a2e", "#5c4636", ctx => {
-    ctx.fillStyle = "#4b392c"; ctx.fillRect(5, 11, 30, 45);
-    ctx.fillStyle = "#1a1f22"; ctx.fillRect(12, 16, 16, 12);
-    ctx.fillStyle = "rgba(160,190,200,0.25)"; ctx.fillRect(13, 17, 6, 10);
-    ctx.fillStyle = "#b9b09a"; ctx.fillRect(30, 34, 3, 2);
-    ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(20, 6, 1, 54);
+  // Closed doors in left–right walls are as low as a thin wall (THIN_WALL + WALL_HEIGHT per tile).
+  "interactive/door_wood_h": () => box(40, 5, 30, "#4a3a2e", "#5c4636", ctx => {
+    ctx.fillStyle = "#4b392c"; ctx.fillRect(5, 8, 30, 25);
+    ctx.fillStyle = "#1a1f22"; ctx.fillRect(12, 11, 16, 8);
+    ctx.fillStyle = "rgba(160,190,200,0.25)"; ctx.fillRect(13, 12, 6, 6);
+    ctx.fillStyle = "#b9b09a"; ctx.fillRect(30, 22, 3, 2);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(5, 28, 30, 4);
   }),
-  "interactive/door_wood_h2": () => box(72, 6, 54, "#4a3a2e", "#5c4636", ctx => {
-    ctx.fillStyle = "#4b392c"; ctx.fillRect(4, 11, 31, 45); ctx.fillRect(37, 11, 31, 45);
-    ctx.fillStyle = "#1a1f22"; ctx.beginPath(); ctx.arc(19, 24, 6, 0, 7); ctx.arc(53, 24, 6, 0, 7); ctx.fill();
-    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(35, 8, 2, 50);
+  "interactive/door_wood_h2": () => box(80, 5, 30, "#4a3a2e", "#5c4636", ctx => {
+    ctx.fillStyle = "#4b392c"; ctx.fillRect(4, 8, 35, 25); ctx.fillRect(41, 8, 35, 25);
+    ctx.fillStyle = "#1a1f22"; ctx.beginPath(); ctx.arc(21, 16, 5, 0, 7); ctx.arc(59, 16, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(39, 6, 2, 28);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(4, 28, 35, 4); ctx.fillRect(41, 28, 35, 4);
   }),
-  "interactive/door_wood_h_open": () => box(8, 4, 56, "#3a2d24", "#2c221b"),
+  // An open leaf seen edge-on, swung out of the doorway: its long top edge, then its end.
+  "interactive/door_wood_h_open": () => box(8, 40, 16, "#6a5140", "#3a2d24", ctx => {
+    ctx.fillStyle = "rgba(255,240,220,0.18)"; ctx.fillRect(1, 1, 2, 38);
+    ctx.fillStyle = "#b9b09a"; ctx.fillRect(5, 46, 2, 3);
+  }),
   "interactive/door_wood_v": () => box(10, 4, 56, "#4a3a2e", "#3a2d24", ctx => {
     ctx.fillStyle = "#b9b09a"; ctx.fillRect(3, 30, 4, 2);
   }),
-  "interactive/door_wood_v_open": () => box(34, 5, 30, "#4a3a2e", "#5c4636", ctx => {
-    ctx.fillStyle = "#1a1f22"; ctx.fillRect(10, 9, 14, 9);
+  // Swung open from a wall running up–down: the leaf across the floor, its face towards us.
+  "interactive/door_wood_v_open": () => box(36, 4, 31, "#4a3a2e", "#56412f", ctx => {
+    ctx.fillStyle = "#47362a"; ctx.fillRect(4, 7, 28, 25);
+    ctx.fillStyle = "#1a1f22"; ctx.fillRect(10, 10, 14, 7);
+    ctx.fillStyle = "rgba(160,190,200,0.2)"; ctx.fillRect(11, 11, 5, 5);
+    ctx.fillStyle = "#3a3f42"; ctx.fillRect(4, 28, 28, 4);
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 4, 3, 31);
   }),
   "interactive/fuse_box": () => box(40, 8, 48, "#3a4146", "#4b555b", ctx => {
     ctx.fillStyle = "#2a3034"; ctx.fillRect(5, 13, 30, 38);

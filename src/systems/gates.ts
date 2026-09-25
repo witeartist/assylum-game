@@ -6,16 +6,22 @@ import { TILE, WALL_HEIGHT } from "../core/constants";
 import { dist, tileCenter, tileIndex } from "../core/geom";
 import type { Tile, Vec2 } from "../core/types";
 import { INTERACT_RANGE, NOISE } from "../data/balance";
+import { WALL_TOP } from "../data/rooms";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
+import { THIN, THIN_WALL } from "../world/walls";
 
 export interface Gate {
   tiles: Tile[];
   /** In a wall running left–right (you pass up/down through it). */
   horizontal: boolean;
+  /** Stands in a thin wall (walls.ts): the door is as low as the wall. */
+  thin: boolean;
   open: boolean;
   x: number; y: number;
   sprite: Phaser.GameObjects.Image;
+  /** In a thick wall: the wall going on above the (low) closed door. */
+  lintel: Phaser.GameObjects.Image | null;
 }
 
 /** Seconds a door holds each kind of actor up. */
@@ -34,7 +40,12 @@ export class Gates {
     this.gates = world.level.gates.map((g, i) => {
       for (const t of g.tiles) { this.byTile.set(tileIndex(t.col, t.row), i); world.doorish.add(tileIndex(t.col, t.row)); }
       const a = tileCenter(g.tiles[0]), b = tileCenter(g.tiles[g.tiles.length - 1]);
-      const gate: Gate = { tiles: g.tiles, horizontal: g.horizontal, open: g.open, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, sprite: world.scene.add.image(0, 0, GATE_ART.h) };
+      const thin = world.walls[tileIndex(g.tiles[0].col, g.tiles[0].row)] >= THIN;
+      const lintel = g.horizontal && !thin ? world.scene.add.image(0, 0, WALL_TOP).setOrigin(0).setTint(0x444444) : null;
+      const gate: Gate = {
+        tiles: g.tiles, horizontal: g.horizontal, thin, open: g.open, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2,
+        sprite: world.scene.add.image(0, 0, GATE_ART.h), lintel,
+      };
       this.apply(gate);
       return gate;
     });
@@ -103,15 +114,22 @@ export class Gates {
     const n = g.tiles.length, first = g.tiles[0], last = g.tiles[n - 1];
     const s = g.sprite.setOrigin(0.5, 1);
     if (g.horizontal) {
-      const base = (first.row + 1) * TILE;
+      // A closed door is as tall as a thin wall: its front plus the top edge. In a thick wall the
+      // wall goes on above it.
+      const base = (first.row + 1) * TILE, low = THIN_WALL + WALL_HEIGHT;
       if (g.open) s.setTexture(GATE_ART.hOpen).setPosition(first.col * TILE + 4, base).setDisplaySize(7, TILE + WALL_HEIGHT);
-      else s.setTexture(n > 1 ? GATE_ART.h2 : GATE_ART.h).setPosition(g.x, base).setDisplaySize(n * TILE, TILE + WALL_HEIGHT);
+      else s.setTexture(n > 1 ? GATE_ART.h2 : GATE_ART.h).setPosition(g.x, base).setDisplaySize(n * TILE, low);
       s.setDepth(base);
+      g.lintel?.setPosition(first.col * TILE, first.row * TILE - WALL_HEIGHT).setDisplaySize(n * TILE, TILE + WALL_HEIGHT - low)
+        .setDepth(base - 1).setVisible(!g.open);
     } else {
       const base = (last.row + 1) * TILE;
       if (g.open) {
-        s.setTexture(GATE_ART.vOpen).setPosition(first.col * TILE + TILE, first.row * TILE + 10).setDisplaySize(TILE * 0.85, TILE * 0.9);
-        s.setDepth(first.row * TILE + 10);
+        // Swung into the room on the right: the leaf stands across the floor from its hinge at
+        // the bottom of the doorway, and we see its face.
+        const hinge = first.col * TILE + (g.thin ? TILE / 2 + THIN_WALL / 2 : TILE), foot = base - 3;
+        s.setTexture(GATE_ART.vOpen).setOrigin(0, 1).setPosition(hinge, foot).setDisplaySize(TILE * 0.9, THIN_WALL + WALL_HEIGHT);
+        s.setDepth(foot);
       } else {
         s.setTexture(GATE_ART.v).setPosition(g.x, base).setDisplaySize(9, n * TILE + WALL_HEIGHT);
         s.setDepth(base);

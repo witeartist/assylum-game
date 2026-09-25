@@ -13,6 +13,7 @@ import { CORRIDOR_FLOOR, DECAL_DENSITY, DECAL_KEYS, DECAL_TILES, ROOMS, WALL_FAC
 import { LAMP_ART, WALL_DECOR, WALL_DECOR_SHARE } from "../data/furniture";
 import type { World } from "../game/World";
 import { buildRoomLookup } from "../world/level";
+import { ARM_N, ARM_S, THIN, THIN_WALL, bands, faceRuns, wallMask, type WallMask } from "../world/walls";
 import { DEPTH } from "../ui/theme";
 import { SURFACES, WALL_FACE_ART } from "./surfaces";
 import { isPlaceholder } from "./textures";
@@ -23,7 +24,11 @@ const H = WALL_HEIGHT;
 const AO_RES = 8;      // AO texels per tile
 const AO_RADIUS = 3;   // blur radius, AO texels
 const AO_STRENGTH = 0.55;
+/** Resolution of the wall outline used for faces, edges and AO, world px (divides every band edge). */
+const MASK_RES = 2;
 const CAP_TINT = 0x6a6a6a;
+/** Tops of thin walls are lighter: a partition should read as a line even in a dim room. */
+const THIN_CAP_TINT = 0xd0d4d2;
 /** Door frames and broken wall edges. */
 const FRAME = 0x4a4f4c;
 const FRAME_DARK = 0x16191a;
@@ -36,6 +41,7 @@ interface Stamp {
   sx: number; sy: number;
   rotation?: number;
   alpha?: number;
+  tint?: number;
   originX?: number; originY?: number;
   /** Axis-aligned bounds in world px, to pick the chunks it touches. */
   bounds: [number, number, number, number];
@@ -66,38 +72,56 @@ function stampImage(key: string, x: number, y: number, scale: number, rotation: 
   return { key, x, y, sx: scale, sy: scale, rotation, alpha, originX: 0.5, originY: 0.5, bounds: [x - radius, y - radius, x + radius, y + radius] };
 }
 
-/** Bake stamps into chunked render textures at `depth`. */
-function bake(scene: Phaser.Scene, stamps: Stamp[], depth: number): Phaser.GameObjects.RenderTexture[] {
+/** Bake the stamps that touch the rect (x, y, w, h) into render textures at `depth`, CHUNK wide at most. */
+function bakeRect(scene: Phaser.Scene, stamps: Stamp[], x: number, y: number, w: number, h: number, depth: number): Phaser.GameObjects.RenderTexture[] {
   const img = scene.make.image({ key: stamps[0]?.key ?? "__DEFAULT" }, false);
   const out: Phaser.GameObjects.RenderTexture[] = [];
-  const worldW = MAP_W * TILE, worldH = MAP_H * TILE;
-  // Rows start WALL_HEIGHT above the map: the tops of row-0 walls are drawn there.
-  for (let top = -H; top < worldH; top += CHUNK) {
-    const bottom = Math.min(top + CHUNK, worldH);
-    for (let cx = 0; cx < worldW; cx += CHUNK) {
-      const w = Math.min(CHUNK, worldW - cx), h = bottom - top;
-      const mine = stamps.filter(s => s.bounds[2] > cx && s.bounds[0] < cx + w && s.bounds[3] > top && s.bounds[1] < bottom);
-      if (mine.length === 0) continue;
-      const rt = scene.add.renderTexture(cx, top, w, h).setOrigin(0).setDepth(depth);
-      rt.beginDraw();
-      for (const s of mine) {
-        img.setTexture(s.key, s.frame).setOrigin(s.originX ?? 0, s.originY ?? 0).setScale(s.sx, s.sy)
-          .setRotation(s.rotation ?? 0).setAlpha(s.alpha ?? 1);
-        rt.batchDraw(img, s.x - cx, s.y - top);
-      }
-      rt.endDraw();
-      out.push(rt);
+  for (let cx = x; cx < x + w; cx += CHUNK) {
+    const cw = Math.min(CHUNK, x + w - cx);
+    const mine = stamps.filter(s => s.bounds[2] > cx && s.bounds[0] < cx + cw && s.bounds[3] > y && s.bounds[1] < y + h);
+    if (mine.length === 0) continue;
+    const rt = scene.add.renderTexture(cx, y, cw, h).setOrigin(0).setDepth(depth);
+    rt.beginDraw();
+    for (const s of mine) {
+      img.setTexture(s.key, s.frame).setOrigin(s.originX ?? 0, s.originY ?? 0).setScale(s.sx, s.sy)
+        .setRotation(s.rotation ?? 0).setAlpha(s.alpha ?? 1).setTint(s.tint ?? 0xffffff);
+      rt.batchDraw(img, s.x - cx, s.y - y);
     }
+    rt.endDraw();
+    out.push(rt);
   }
   img.destroy();
   return out;
 }
 
-/** Soft darkening of the floor near walls, as a black texture with alpha. */
-function ambientOcclusion(scene: Phaser.Scene, solidAt: (c: number, r: number) => boolean): string {
+/** Bake stamps over the whole map into CHUNK-sized render textures at `depth`. */
+function bake(scene: Phaser.Scene, stamps: Stamp[], depth: number): Phaser.GameObjects.RenderTexture[] {
+  const out: Phaser.GameObjects.RenderTexture[] = [];
+  // Rows start WALL_HEIGHT above the map: the tops of row-0 walls are drawn there.
+  for (let top = -H; top < MAP_H * TILE; top += CHUNK) {
+    out.push(...bakeRect(scene, stamps, 0, top, MAP_W * TILE, Math.min(CHUNK, MAP_H * TILE - top), depth));
+  }
+  return out;
+}
+
+/**
+ * Depth of the tops of wall row `r`: just under anything standing on that row's floor line, so
+ * whoever is behind (north of) the wall is hidden by its top and whoever is in front covers it.
+ */
+export function capDepth(r: number): number {
+  return (r + 1) * TILE - 0.5;
+}
+
+/** Soft darkening of the floor near walls (thin ones too), as a black texture with alpha. */
+function ambientOcclusion(scene: Phaser.Scene, mask: WallMask): string {
   const w = MAP_W * AO_RES, h = MAP_H * AO_RES;
+  const per = TILE / AO_RES / mask.res;   // mask cells across one AO texel
   let open = new Float32Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) open[y * w + x] = solidAt(Math.floor(x / AO_RES), Math.floor(y / AO_RES)) ? 0 : 1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let wall = 0;
+    for (let dy = 0; dy < per; dy++) for (let dx = 0; dx < per; dx++) wall += mask.cells[(y * per + dy) * mask.w + x * per + dx];
+    open[y * w + x] = 1 - wall / (per * per);
+  }
   const floorMask = open.slice();
   // Three box blurs ≈ gaussian.
   for (let pass = 0; pass < 3; pass++) {
@@ -146,14 +170,27 @@ export class WorldView {
     const lookup = buildRoomLookup(level.rooms);
     const vrng = new Rng(level.seed ^ 0xdeca1);
 
+    const shapes = world.walls;
+    const mask = wallMask(level.rows, shapes, MASK_RES);
+
     // ── Floor layer ──
     const floor: Stamp[] = [];
-    for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
-      if (solid(c, r)) continue;
+    const floorKey = (c: number, r: number): string | null => {
+      if (solid(c, r)) return null;
       const i = lookup[tileIndex(c, r)];
       const room = i >= 0 ? level.rooms[i] : null;
       const inside = room && c > room.x && c < room.x + room.w - 1 && r > room.y && r < room.y + room.h - 1;
-      floor.push(surfaceStamp(scene, inside ? ROOMS[room.type].floor : CORRIDOR_FLOOR, c * TILE, r * TILE, TILE, TILE));
+      return inside ? ROOMS[room.type].floor : CORRIDOR_FLOOR;
+    };
+    for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
+      const key = floorKey(c, r);
+      if (key) { floor.push(surfaceStamp(scene, key, c * TILE, r * TILE, TILE, TILE)); continue; }
+      if (shapes[tileIndex(c, r)] < THIN) continue;
+      // Beside a thin wall each quarter of the tile shows the floor next to it.
+      for (const qy of [-1, 1]) for (const qx of [-1, 1]) {
+        const key = floorKey(c + qx, r) ?? floorKey(c, r + qy) ?? floorKey(c + qx, r + qy) ?? floorKey(c - qx, r) ?? floorKey(c, r - qy) ?? CORRIDOR_FLOOR;
+        floor.push(surfaceStamp(scene, key, c * TILE + (qx > 0 ? TILE / 2 : 0), r * TILE + (qy > 0 ? TILE / 2 : 0), TILE / 2, TILE / 2));
+      }
     }
     const decal = (kind: DecalKind, c: number, r: number, scaleMul = 1) => {
       const key = vrng.pick(DECAL_KEYS[kind]);
@@ -172,29 +209,43 @@ export class WorldView {
         if (vrng.chance(p)) { decal(kind, c, r); break; }
       }
     }
-    const ao = ambientOcclusion(scene, solid);
+    const ao = ambientOcclusion(scene, mask);
     const aoScale = TILE / AO_RES;
     floor.push({ key: ao, x: 0, y: 0, sx: aoScale, sy: aoScale, originX: 0, originY: 0, bounds: [0, 0, MAP_W * TILE, MAP_H * TILE] });
-    for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
-      if (solid(c, r) && !solid(c, r + 1)) floor.push(surfaceStamp(scene, WALL_FACE, c * TILE, (r + 1) * TILE - H, TILE, H));
+    // Front faces wherever a wall (or a thin wall's band) stands on open floor, a tile at a time
+    // so each piece is one frame of the texture.
+    for (const run of faceRuns(mask)) {
+      for (let x = run.x0; x < run.x1;) {
+        const end = Math.min(run.x1, (Math.floor(x / TILE) + 1) * TILE);
+        floor.push(surfaceStamp(scene, WALL_FACE, x, run.y - H, end - x, H));
+        x = end;
+      }
     }
     bake(scene, floor, DEPTH.floor);
 
-    // ── Caps layer: wall tops near walkable space (deep inside wall masses stays black) ──
-    const caps: Stamp[] = [];
+    // ── Caps: wall tops near walkable space (deep inside wall masses stays black), a strip per
+    // row of walls, each sorted with the characters and furniture at its floor line ──
     const nearFloor = (c: number, r: number) => {
       for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) if (!solid(c + dc, r + dr)) return true;
       return false;
     };
-    for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
-      if (solid(c, r) && nearFloor(c, r)) caps.push(surfaceStamp(scene, WALL_TOP, c * TILE, r * TILE - H, TILE, TILE, r * TILE));
+    for (let r = 0; r < MAP_H; r++) {
+      const caps: Stamp[] = [];
+      for (let c = 0; c < MAP_W; c++) {
+        if (!solid(c, r) || !nearFloor(c, r)) continue;
+        // Wall tops are darker than any floor, so walls read as solid masses.
+        const code = shapes[tileIndex(c, r)], tint = code >= THIN ? THIN_CAP_TINT : CAP_TINT;
+        for (const b of bands(code)) {
+          const x = c * TILE + b.x0, y = r * TILE + b.y0;
+          caps.push({ ...surfaceStamp(scene, WALL_TOP, x, y - H, b.x1 - b.x0, b.y1 - b.y0, y), tint });
+        }
+      }
+      bakeRect(scene, caps, 0, r * TILE - H, MAP_W * TILE, TILE, capDepth(r));
     }
-    // Wall tops are darker than any floor, so walls read as solid masses.
-    bake(scene, caps, DEPTH.caps).forEach(rt => rt.setTint(CAP_TINT));
-    this.drawCapEdges(solid);
+    this.drawCapEdges(mask);
 
     for (const f of level.furniture) {
-      placeStanding(scene, f.key, (f.col + f.w / 2) * TILE, (f.row + f.h) * TILE - 1, f.w * TILE * 0.96);
+      placeStanding(scene, f.key, (f.col + f.w / 2) * TILE + sideHug(world, f.col, f.row, f.w, f.h), (f.row + f.h) * TILE - 1, f.w * TILE * 0.96);
     }
     this.buildDoors();
     this.buildLamps();
@@ -204,17 +255,44 @@ export class WorldView {
     world.events.on("doorOpened", ({ index }) => { this.doorParts[index]?.forEach(p => p.destroy()); });
   }
 
-  /** Thin lines that make wall tops read as solid blocks: a lit rim above faces, dark outlines elsewhere. */
-  private drawCapEdges(solid: (c: number, r: number) => boolean): void {
-    const g = this.world.scene.add.graphics().setDepth(DEPTH.caps + 1);
-    for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
-      if (!solid(c, r)) continue;
-      const x = c * TILE, y = r * TILE - H;
-      if (!solid(c, r + 1)) { g.fillStyle(0xa3aca8, 0.7); g.fillRect(x, y + TILE - 2, TILE, 2); }
-      g.fillStyle(0x050606, 0.9);
-      if (!solid(c, r - 1)) g.fillRect(x, y, TILE, 1);
-      if (!solid(c - 1, r)) g.fillRect(x, y, 1, TILE + (solid(c, r + 1) ? 0 : H));
-      if (!solid(c + 1, r)) g.fillRect(x + TILE - 1, y, 1, TILE + (solid(c, r + 1) ? 0 : H));
+  /**
+   * Thin lines that make wall tops read as solid: a lit rim above front faces, dark outlines
+   * elsewhere, and down the sides of the faces. Traced on the wall mask, so thin walls get them;
+   * the lines on a wall top belong to its row of caps.
+   */
+  private drawCapEdges(m: WallMask): void {
+    const scene = this.world.scene;
+    const rows = Array.from({ length: MAP_H }, (_, r) => scene.add.graphics().setDepth(capDepth(r) + 0.1));
+    const faces = scene.add.graphics().setDepth(DEPTH.floor + 1);
+    const wall = (x: number, y: number) => x < 0 || y < 0 || x >= m.w || y >= m.h || m.cells[y * m.w + x] === 1;
+    const R = m.res, per = TILE / R;
+    const DARK = 0x050606, RIM = 0xa3aca8;
+    for (let y = 0; y < m.h; y++) {
+      const g = rows[Math.floor(y / per)];
+      let top = -1, rim = -1;
+      for (let x = 0; x <= m.w; x++) {
+        const on = x < m.w && m.cells[y * m.w + x] === 1;
+        const isTop = on && !wall(x, y - 1), isRim = on && !wall(x, y + 1);
+        if (isTop && top < 0) top = x;
+        if (!isTop && top >= 0) { g.fillStyle(DARK, 0.9).fillRect(top * R, y * R - H, (x - top) * R, 1); top = -1; }
+        if (isRim && rim < 0) rim = x;
+        if (!isRim && rim >= 0) { g.fillStyle(RIM, 0.7).fillRect(rim * R, (y + 1) * R - H - 2, (x - rim) * R, 2); rim = -1; }
+      }
+    }
+    for (let x = 0; x < m.w; x++) for (const side of [-1, 1]) {
+      const lx = side < 0 ? x * R : (x + 1) * R - 1;
+      let start = -1;
+      for (let y = 0; y <= m.h; y++) {
+        const on = y < m.h && m.cells[y * m.w + x] === 1 && !wall(x + side, y) && (start < 0 || Math.floor(y / per) === Math.floor(start / per));
+        if (on && start < 0) start = y;
+        if (on || start < 0) continue;
+        rows[Math.floor(start / per)].fillStyle(DARK, 0.9).fillRect(lx, start * R - H, 1, (y - start) * R);
+        // The wall ends here: the outline goes on down the side of its front face.
+        if (!wall(x, y)) faces.fillStyle(DARK, 0.9).fillRect(lx, y * R - H, 1, H);
+        start = -1;
+        // A run cut at a row boundary goes on in the next row's strip.
+        if (y < m.h && m.cells[y * m.w + x] === 1 && !wall(x + side, y)) start = y;
+      }
     }
   }
 
@@ -239,19 +317,24 @@ export class WorldView {
    */
   private buildFrames(solid: (c: number, r: number) => boolean): void {
     const { scene, level } = this.world;
-    const g = scene.add.graphics().setDepth(DEPTH.caps + 2);
     const runs = [...level.gates.map(d => ({ tiles: d.tiles, horizontal: d.horizontal })),
       ...level.lockedDoors.map(d => ({ tiles: d.doorTiles, horizontal: d.doorTiles.every(t => !solid(t.col, t.row - 1) || !solid(t.col, t.row + 1)) }))];
     for (const { tiles, horizontal } of runs) {
       const xs = tiles.map(t => t.col), ys = tiles.map(t => t.row);
       const c0 = Math.min(...xs), c1 = Math.max(...xs) + 1, r0 = Math.min(...ys), r1 = Math.max(...ys) + 1;
+      // Over the door and anyone in the doorway; under whoever has stepped out in front of it.
+      const g = scene.add.graphics().setDepth(r1 * TILE + 0.5);
+      // In a thin wall the frame is as thin as the wall (see walls.ts for where its band lies).
+      const thin = this.world.walls[tileIndex(c0, r0)] >= THIN;
       if (horizontal) {
-        const top = r0 * TILE - H, x0 = c0 * TILE, x1 = c1 * TILE;
-        g.fillStyle(FRAME, 1).fillRect(x0, top, x1 - x0, 5);                          // header beam
-        g.fillStyle(FRAME_DARK, 1).fillRect(x0, top + 5, x1 - x0, 2);
-        g.fillStyle(FRAME, 1).fillRect(x0, top, 4, r1 * TILE - top).fillRect(x1 - 4, top, 4, r1 * TILE - top); // posts
+        const top = thin ? r1 * TILE - H - THIN_WALL : r0 * TILE - H, x0 = c0 * TILE, x1 = c1 * TILE;
+        const beam = thin ? 4 : 5, post = thin ? 3 : 4;
+        g.fillStyle(FRAME, 1).fillRect(x0, top, x1 - x0, beam);                          // header beam
+        g.fillStyle(FRAME_DARK, 1).fillRect(x0, top + beam, x1 - x0, 2);
+        g.fillStyle(FRAME, 1).fillRect(x0, top, post, r1 * TILE - top).fillRect(x1 - post, top, post, r1 * TILE - top); // posts
       } else {
-        const x0 = c0 * TILE, x1 = c1 * TILE, top = r0 * TILE - H, bottom = r1 * TILE - H;
+        const x0 = c0 * TILE + (thin ? TILE / 2 - THIN_WALL / 2 : 0), x1 = thin ? x0 + THIN_WALL : c1 * TILE;
+        const top = r0 * TILE - H, bottom = r1 * TILE - H;
         g.fillStyle(FRAME, 1).fillRect(x0, top, x1 - x0, 4).fillRect(x0, bottom - 4, x1 - x0, 4); // posts, seen from above
         g.fillStyle(FRAME_DARK, 0.9).fillRect(x0, top, 2, bottom - top).fillRect(x1 - 2, top, 2, bottom - top);
       }
@@ -261,15 +344,18 @@ export class WorldView {
   /** Holes knocked through walls: jagged edges and rubble on both sides. */
   private buildBreaches(rng: Rng): void {
     const { scene, level } = this.world;
-    const g = scene.add.graphics().setDepth(DEPTH.caps + 2);
     for (const t of level.breaches) {
       const x = t.col * TILE, top = t.row * TILE - H, bottom = top + TILE;
-      // Broken chunks sticking into the gap from the wall ends above and below.
+      // Broken chunks sticking into the gap from the wall ends above and below (as wide as the wall).
+      const thin = [t.row - 1, t.row + 1].some(r => r >= 0 && r < MAP_H && this.world.walls[tileIndex(t.col, r)] >= THIN);
+      const x0 = thin ? x + TILE / 2 - THIN_WALL / 2 : x, w = thin ? THIN_WALL : TILE;
       for (const [y, dir] of [[top, 1], [bottom, -1]] as [number, number][]) {
+        // Each chunk is part of the top of the wall it breaks off.
+        const g = scene.add.graphics().setDepth(capDepth(t.row - dir) + 0.2);
         g.fillStyle(BROKEN, 1).beginPath();
-        g.moveTo(x, y);
-        for (let i = 0; i <= 4; i++) g.lineTo(x + (TILE * i) / 4, y + dir * rng.range(2, 9));
-        g.lineTo(x + TILE, y);
+        g.moveTo(x0, y);
+        for (let i = 0; i <= 4; i++) g.lineTo(x0 + (w * i) / 4, y + dir * rng.range(2, thin ? 7 : 9));
+        g.lineTo(x0 + w, y);
         g.closePath().fillPath();
       }
       for (let i = 0; i < 2; i++) {
@@ -312,6 +398,19 @@ export class WorldView {
       if (row > 0 && level.rows[row - 1][col] === "#") placeStanding(scene, key, lamp.x, row * TILE - 1, width);
     }
   }
+}
+
+/**
+ * How far to move a piece standing against a thin wall on its left or right so that it touches
+ * the wall (a partition stands in the middle of its tile), world px. 0 elsewhere.
+ */
+export function sideHug(world: World, col: number, row: number, w: number, h: number): number {
+  const thinSide = (c: number) => Array.from({ length: h }, (_, i) => row + i).every(r => {
+    const code = c >= 0 && c < MAP_W && r >= 0 && r < MAP_H && world.level.rows[r][c] === "#" ? world.walls[tileIndex(c, r)] : 0;
+    return code >= THIN && (code & (ARM_N | ARM_S)) !== 0;
+  });
+  const gap = TILE / 2 - THIN_WALL / 2;
+  return thinSide(col - 1) ? -gap : thinSide(col + w) ? gap : 0;
 }
 
 /**

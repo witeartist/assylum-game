@@ -8,7 +8,7 @@ import type { Vec2 } from "../core/types";
 import { BED_RANGE, BREATH, HUNTER_AI, LOCKER_RANGE, NOISE } from "../data/balance";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
-import { placeStanding } from "../render/worldView";
+import { placeStanding, sideHug } from "../render/worldView";
 import { isPlaceholder } from "../render/textures";
 
 export interface HideSpot extends Vec2 {
@@ -47,7 +47,7 @@ export class Hiding {
       // Against a side wall a locker is seen from the side (when that picture exists).
       const wall = (c: number, r: number) => world.sight.isSolid(c, r);
       const side = !wall(t.col, t.row - 1) && (wall(t.col - 1, t.row) || wall(t.col + 1, t.row)) && !isPlaceholder(LOCKER_SIDE.closed);
-      const sprite = placeStanding(scene, side ? LOCKER_SIDE.closed : "interactive/locker_closed", p.x, p.y + TILE * 0.2, LOCKER_WIDTH);
+      const sprite = placeStanding(scene, side ? LOCKER_SIDE.closed : "interactive/locker_closed", p.x + sideHug(world, t.col, t.row, 1, 1), p.y + TILE * 0.2, LOCKER_WIDTH);
       if (side && wall(t.col + 1, t.row)) sprite.setFlipX(true);
       this.spots.push({ x: p.x, y: p.y, kind: "locker", sprite, occupant: null, out: p });
     }
@@ -56,7 +56,8 @@ export class Hiding {
       const p = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       // Beds cover their two tiles; the picture rises above the footprint like any 3/4 object.
       const width = (bed.orientation === "vertical" ? 1 : 2) * TILE * 0.95;
-      const sprite = placeStanding(scene, bed.sprite, p.x, (Math.max(bed.tile.row, bed.tile2.row) + 1) * TILE - 1, width);
+      const hug = bed.orientation === "vertical" ? 0 : sideHug(world, Math.min(bed.tile.col, bed.tile2.col), bed.tile.row, 2, 1);
+      const sprite = placeStanding(scene, bed.sprite, p.x + hug, (Math.max(bed.tile.row, bed.tile2.row) + 1) * TILE - 1, width);
       this.spots.push({ x: p.x, y: p.y, kind: "bed", sprite, occupant: null, out: p });
     }
     for (const f of world.level.furniture) {

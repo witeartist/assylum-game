@@ -72,7 +72,7 @@ export class GameScene extends Phaser.Scene {
 
     w.lighting = new Lighting(w);
     new WorldView(w);
-    w.collision = new CollisionLayer(this, w.grid);
+    w.collision = new CollisionLayer(this, w.grid, w.walls, w.level.rows);
     w.gates = new Gates(w);
     w.hiding = new Hiding(w);
     w.doors = new Doors(w);

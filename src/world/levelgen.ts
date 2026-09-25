@@ -1,9 +1,10 @@
 // Hospital level generator. Deterministic: the same seed and options always give the same level,
 // so multiplayer peers only exchange the seed.
 //
-// Layout: three long corridors joined by vertical ones, rows of rooms on both sides. Rooms are
-// allowed to overlap and corridors to run through them — that is what makes the odd, tangled
-// floor plan. Rooms that grew into each other share one type; big halls get pillars; some walls
+// Layout: three long corridors joined by vertical ones, rows of rooms on both sides. Rooms in a
+// row stand wall to wall, and rows back to back between two corridors grow to meet: one wall
+// between neighbours, drawn as a thin partition (walls.ts). Rooms are allowed to overlap and
+// corridors to run through them — that is what makes the odd, tangled floor plan. Rooms that grew into each other share one type; big halls get pillars; some walls
 // between neighbours are broken through, which makes loops to run around.
 import { MAP_W, MAP_H } from "../core/constants";
 import { manhattan, tileIndex } from "../core/geom";
@@ -67,18 +68,22 @@ function weightedPick<T>(rng: Rng, options: [T, number][]): T {
 function buildPlan(rng: Rng): Plan {
   const rooms: Rect[] = [];
   const corridorRows = [rng.int(8, 11), rng.int(21, 25), rng.int(34, 38)];
-  const makeRoomRow = (startCol: number, rowY: number, maxCount: number, side: number) => {
+  const makeRoomRow = (startCol: number, rowY: number, maxCount: number, side: number): Rect[] => {
+    const row: Rect[] = [];
     let col = startCol + rng.int(0, 3);
     for (let i = 0; i < maxCount; i++) {
       const rw = rng.int(5, 10);
       const rh = rng.int(4, 7);
       const ry = side < 0 ? rowY - rh : rowY + 2;
       if (col + rw >= MAP_W - 2 || ry < 1 || ry + rh >= MAP_H - 1) break;
-      rooms.push({ x: col, y: ry, w: rw, h: rh });
-      col += rw + rng.int(0, 2);
+      row.push({ x: col, y: ry, w: rw, h: rh });
+      col += rw - 1;   // the next room shares this one's east wall
     }
+    rooms.push(...row);
+    return row;
   };
-  for (const cr of corridorRows) { makeRoomRow(2, cr, 9, -1); makeRoomRow(2, cr, 9, 1); }
+  const rows = corridorRows.map(cr => ({ above: makeRoomRow(2, cr, 9, -1), below: makeRoomRow(2, cr, 9, 1) }));
+  for (let k = 0; k + 1 < rows.length; k++) shareWalls(rows[k].below, rows[k + 1].above);
   const extras: Rect[] = [];
   for (let i = 0; i < 4; i++) {
     const ex = rng.int(3, MAP_W - 14);
@@ -93,6 +98,29 @@ function buildPlan(rng: Rng): Plan {
   }
   rooms.push(...extras);
   return carvePlan(rng, rooms, corridorRows, [rng.int(10, 15), Math.floor(MAP_W / 2), rng.int(MAP_W - 16, MAP_W - 11)], true);
+}
+
+/** Rows of rooms back to back grow to share one wall when at most this many rows of wall part them. */
+const MAX_SHARED_GAP = 4;
+
+/**
+ * Two rows of rooms back to back (`upper` below one corridor, `lower` above the next): where a
+ * thick band of wall would separate them, rooms grow so that they share one wall — a thin
+ * partition instead of a block. Rooms that already overlap stay one hall.
+ */
+function shareWalls(upper: Rect[], lower: Rect[]): void {
+  const facing = (a: Rect, b: Rect) => Math.min(a.x + a.w - 2, b.x + b.w - 2) >= Math.max(a.x + 1, b.x + 1);
+  const bottom = (a: Rect) => a.y + a.h - 1;
+  for (const b of lower) {
+    const ring = Math.max(-1, ...upper.filter(a => facing(a, b)).map(bottom));
+    const gap = b.y - ring;
+    if (ring >= 0 && gap >= 1 && gap <= MAX_SHARED_GAP) { b.y -= gap; b.h += gap; }
+  }
+  for (const a of upper) {
+    const ring = Math.min(Infinity, ...lower.filter(b => facing(a, b)).map(b => b.y));
+    const gap = ring - bottom(a);
+    if (gap >= 1 && gap <= MAX_SHARED_GAP) a.h += gap;
+  }
 }
 
 function carvePlan(rng: Rng, rooms: Rect[], corridorRows: number[], verticals: number[], odd: boolean): Plan {
@@ -115,17 +143,17 @@ function carvePlan(rng: Rng, rooms: Rect[], corridorRows: number[], verticals: n
   return { grid, rooms, corridorRows, breaches };
 }
 
-/** Holes knocked through the wall between rooms standing side by side. Returns the hole tiles. */
+/** Holes knocked through the wall two rooms side by side share. Returns the hole tiles. */
 function breakWalls(rng: Rng, grid: CharGrid, rooms: Rect[]): Tile[] {
   const holes: Tile[] = [];
   for (const a of rooms) for (const b of rooms) {
-    if (b.x !== a.x + a.w || !rng.chance(0.3)) continue;
+    if (b.x !== a.x + a.w - 1 || !rng.chance(0.2)) continue;
     const lo = Math.max(a.y, b.y) + 1, hi = Math.min(a.y + a.h, b.y + b.h) - 2;
     if (hi < lo) continue;
     const r = rng.int(lo, hi);
-    if (grid[r][a.x + a.w - 2] === "." && grid[r][b.x + 1] === "." && grid[r][a.x + a.w - 1] === "#" && grid[r][b.x] === "#") {
-      grid[r][a.x + a.w - 1] = "."; grid[r][b.x] = ".";
-      holes.push({ col: a.x + a.w - 1, row: r }, { col: b.x, row: r });
+    if (grid[r][b.x - 1] === "." && grid[r][b.x + 1] === "." && grid[r][b.x] === "#") {
+      grid[r][b.x] = ".";
+      holes.push({ col: b.x, row: r });
     }
   }
   return holes;
@@ -363,15 +391,17 @@ function pickTerminalTile(rng: Rng, grid: CharGrid, closed: WalkGrid, room: Room
  * all terminals stay reachable with every door shut — so a level can never soft-lock.
  */
 function pickLockedDoors(
-  rng: Rng, grid: CharGrid, keyRooms: Room[], keyTiles: Tile[], start: Tile, mustReach: Tile[], used: Set<number>,
+  rng: Rng, grid: CharGrid, keyRooms: Room[], keyTiles: Tile[], start: Tile, mustReach: Tile[], used: Set<number>, breaches: Tile[],
 ): LockedDoor[] {
   const base = WalkGrid.fromRows(grid);
+  const broken = new Set(breaches.map(key));
   const locked: LockedDoor[] = [];
   let sealed: Tile[] = [];
   for (let i = 0; i < keyRooms.length && locked.length < MAX_LOCKED_DOORS; i++) {
     const room = keyRooms[i];
     const doorTiles = roomRingFloorTiles(grid, room);
-    if (doorTiles.length === 0 || doorTiles.length > 3) continue;
+    // A hole knocked in its wall is no place for a door: such a room stays open.
+    if (doorTiles.length === 0 || doorTiles.length > 3 || doorTiles.some(t => broken.has(key(t)))) continue;
     const closed = base.withSolid(sealed.concat(doorTiles));
     const dist = distanceMap(closed, start);
     if (distanceTo(dist, keyTiles[i]) >= 0) continue; // room leaks — locking it would be pointless
@@ -508,7 +538,7 @@ function tryLevel(rng: Rng, seed: number, o: Required<LevelOptions>, plan: Plan,
   if (![exitTile, ...keyTiles].every(t => distanceTo(openDist, t) >= 0)) return null;
 
   const mustReach = [foxSpawn, bossSpawn, exitTile, ...npcSpawns];
-  const lockedDoors = pickLockedDoors(rng, grid, keyRooms, keyTiles, playerSpawn, mustReach, used);
+  const lockedDoors = pickLockedDoors(rng, grid, keyRooms, keyTiles, playerSpawn, mustReach, used, plan.breaches);
   if (lockedDoors.length < Math.min(MAX_LOCKED_DOORS, o.keys)) return null;
   const closed = WalkGrid.fromRows(grid).withSolid(lockedDoors.flatMap(d => d.doorTiles));
   const dClosed = distanceMap(closed, playerSpawn);

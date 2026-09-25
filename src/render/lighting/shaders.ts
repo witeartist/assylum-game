@@ -19,15 +19,17 @@ ${PRECISION}
 #define MAX_STEPS ${MAX_STEPS}
 
 uniform sampler2D uMainSampler;
-uniform sampler2D uOcc;      // R: 1 wall, 0.6 door (solid, but lit like a wall front), 0 open (nearest)
+uniform sampler2D uOcc;      // R: 1 wall, 0.6 door (solid, but lit like a wall front), 0 open; G: shape (walls.ts)
 uniform vec2 uMapSize;       // tiles
 uniform float uTile;         // world px per tile
 uniform float uWallH;        // wall height, world px
+uniform float uThin;         // thin wall thickness, tiles
 uniform vec4 uView;          // visible world rect: x, y, w, h
 uniform float uFlipY;
 uniform vec2 uViewer;        // eye position, world px
 uniform float uSight;        // lamp light fades beyond this distance, world px
 uniform float uTopLight;     // brightness of wall tops
+uniform float uThinTop;      // brightness of thin wall tops (partitions stay legible)
 uniform vec3 uAmbient;       // light everywhere, even out of sight: 0 in play (screenshots only)
 uniform float uPhoto;        // 1 = screenshot mode: light every room, not only what the viewer sees
 uniform float uSoft;         // light jitter for soft shadow edges, world px
@@ -38,17 +40,56 @@ uniform vec4 uLightC[MAX_LIGHTS];   // dirX, dirY, cosOuter, cosInner
 
 varying vec2 outTexCoord;
 
-float solidAt(vec2 cell) {
-  if (cell.x < 0.0 || cell.y < 0.0 || cell.x >= uMapSize.x || cell.y >= uMapSize.y) return 1.0;
-  return texture2D(uOcc, (cell + 0.5) / uMapSize).r;
+// x: solid (1 wall, 0.6 door, 0 open), y: shape code (0 whole tile, 16 + arms thin wall).
+vec2 occAt(vec2 cell) {
+  if (cell.x < 0.0 || cell.y < 0.0 || cell.x >= uMapSize.x || cell.y >= uMapSize.y) return vec2(1.0, 0.0);
+  vec4 t = texture2D(uOcc, (cell + 0.5) / uMapSize);
+  return vec2(t.r, floor(t.g * 255.0 + 0.5));
 }
 
-// 1.0 if the segment a→b crosses no solid tile (the tiles of a and b themselves are not tested).
-float trace(vec2 a, vec2 b) {
+// Bands of a thin wall in cell-local tiles (x0, y0, x1, y1), as in walls.ts: h runs west–east
+// along the bottom, v north–south through the middle; a missing band is empty (x0 > x1).
+void thinBands(float code, out vec4 h, out vec4 v) {
+  float arms = code - 16.0;
+  float n = mod(arms, 2.0), e = mod(floor(arms / 2.0), 2.0), s = mod(floor(arms / 4.0), 2.0), w = floor(arms / 8.0);
+  float across = max(e, w), along = max(n, s);
+  float m0 = 0.5 - uThin * 0.5, m1 = 0.5 + uThin * 0.5, top = 1.0 - uThin;
+  h = across > 0.5 ? vec4(w > 0.5 ? 0.0 : (along > 0.5 ? m0 : 0.0), top, e > 0.5 ? 1.0 : (along > 0.5 ? m1 : 1.0), 1.0) : vec4(1.0, 1.0, -1.0, -1.0);
+  v = along > 0.5 ? vec4(m0, n > 0.5 ? 0.0 : (across > 0.5 ? top : 0.0), m1, 1.0) : vec4(1.0, 1.0, -1.0, -1.0);
+}
+
+bool inBox(vec2 p, vec4 b) { return p.x >= b.x && p.x <= b.z && p.y >= b.y && p.y <= b.w; }
+
+// Does the segment p + t·d (t in 0..1) touch box b?
+bool segBox(vec2 p, vec2 d, vec4 b) {
+  if (b.x > b.z) return false;
+  vec2 dd = vec2(abs(d.x) < 1e-3 ? 1e-3 : d.x, abs(d.y) < 1e-3 ? 1e-3 : d.y);
+  vec2 t0 = (b.xy - p) / dd, t1 = (b.zw - p) / dd;
+  vec2 lo = min(t0, t1), hi = max(t0, t1);
+  return max(max(lo.x, lo.y), 0.0) <= min(min(hi.x, hi.y), 1.0);
+}
+
+// Does the segment p→q (tiles) cross the thin wall of this code in this cell? A band holding an end point doesn't count.
+bool crossesThin(float code, vec2 cell, vec2 p, vec2 q) {
+  vec4 h, v;
+  thinBands(code, h, v);
+  vec2 a = p - cell, b = q - cell, d = b - a;
+  if (!inBox(a, h) && !inBox(b, h) && segBox(a, d, h)) return true;
+  return !inBox(a, v) && !inBox(b, v) && segBox(a, d, v);
+}
+
+// 1.0 if the segment a→b (world px) crosses no wall. A whole solid cell blocks; a thin wall blocks
+// where its band is. The cells of the end points count only for thin walls, and the start cell
+// only with fromStart set (a wall top starts inside its own wall).
+float trace(vec2 a, vec2 b, float fromStart) {
   vec2 p = a / uTile;
   vec2 q = b / uTile;
   vec2 cell = floor(p);
   vec2 end = floor(q);
+  vec2 o = occAt(cell);
+  if (fromStart > 0.5 && o.x > 0.3 && o.y > 15.5 && crossesThin(o.y, cell, p, q)) return 0.0;
+  o = occAt(end);
+  if ((end.x != cell.x || end.y != cell.y) && o.x > 0.3 && o.y > 15.5 && crossesThin(o.y, end, p, q)) return 0.0;
   vec2 d = q - p;
   vec2 s = vec2(d.x >= 0.0 ? 1.0 : -1.0, d.y >= 0.0 ? 1.0 : -1.0);
   vec2 ad = max(abs(d), vec2(1e-5));
@@ -61,20 +102,38 @@ float trace(vec2 a, vec2 b) {
     if (tMax.x < tMax.y) { cell.x += s.x; tMax.x += tDelta.x; }
     else { cell.y += s.y; tMax.y += tDelta.y; }
     if (cell.x == end.x && cell.y == end.y) return 1.0;
-    if (solidAt(cell) > 0.3) return 0.0;
+    o = occAt(cell);
+    if (o.x > 0.3 && (o.y < 15.5 || crossesThin(o.y, cell, p, q))) return 0.0;
   }
   return 1.0;
 }
 
-// What the pixel shows (0 floor, 1 wall front, 2 wall top) and the ground point it stands for.
+// Solid at ground point p (world px): the cell's value, or 0 beside the bands of a thin wall.
+// thin: set to 1 if p is in the tile of a thin wall.
+float solidAt(vec2 p, out float thin) {
+  vec2 cell = floor(p / uTile);
+  vec2 o = occAt(cell);
+  thin = 0.0;
+  if (o.x < 0.3 || o.y < 15.5) return o.x;
+  vec4 h, v;
+  thinBands(o.y, h, v);
+  vec2 l = p / uTile - cell;
+  thin = 1.0;
+  return inBox(l, h) || inBox(l, v) ? o.x : 0.0;
+}
+
+// What the pixel shows (0 floor, 1 wall front, 2 wall top, 2.5 thin wall top) and the ground
+// point it stands for.
 float material(vec2 w, out vec2 g) {
-  vec2 cell = floor(w / uTile);
-  vec2 capCell = vec2(cell.x, floor((w.y + uWallH) / uTile));
-  float cap = solidAt(capCell);
+  vec2 raised = vec2(w.x, w.y + uWallH);
+  float thin;
+  float cap = solidAt(raised, thin);
   // Wall top: lit and seen like the floor right under it (per pixel, so no square edges).
-  if (cap > 0.8) { g = vec2(w.x, w.y + uWallH); return 2.0; }
-  if (cap > 0.3) { g = vec2(w.x, (capCell.y + 1.0) * uTile + 0.5); return 1.0; }
-  if (solidAt(cell) > 0.3) { g = vec2(w.x, (cell.y + 1.0) * uTile + 0.5); return 1.0; }
+  if (cap > 0.8) { g = raised; return 2.0 + thin * 0.5; }
+  if (cap > 0.3) { g = vec2(w.x, (floor(raised.y / uTile) + 1.0) * uTile + 0.5); return 1.0; }
+  // Front face: the lowest uWallH px above the floor line of a wall standing on open floor.
+  float base = (floor(w.y / uTile) + 1.0) * uTile;
+  if (raised.y >= base && solidAt(vec2(w.x, base - 0.5), thin) > 0.3) { g = vec2(w.x, base + 0.5); return 1.0; }
   g = w;
   return 0.0;
 }
@@ -107,7 +166,9 @@ void main() {
 
   // Out of the viewer's line of sight: nothing at all. (A wall top is seen only if the wall
   // itself faces the viewer — the tops deep inside a wall mass stay black.)
-  if (uPhoto < 0.5 && trace(g, uViewer) < 0.5) { gl_FragColor = vec4(uAmbient * (m > 1.5 ? uTopLight : 1.0) * 0.5, 0.0); return; }
+  float fromStart = m < 1.5 ? 1.0 : 0.0;
+  float top = m > 2.25 ? uThinTop : m > 1.5 ? uTopLight : 1.0;
+  if (uPhoto < 0.5 && trace(g, uViewer, fromStart) < 0.5) { gl_FragColor = vec4(uAmbient * top * 0.5, 0.0); return; }
 
   float jitter = (hash(gl_FragCoord.xy) - 0.5) * uSoft;
   float haze = 0.0;
@@ -119,12 +180,12 @@ void main() {
     if (k <= 0.0) continue;
     vec2 toL = A.xy - g;
     vec2 side = vec2(-toL.y, toL.x) / max(length(toL), 0.001);
-    if (trace(g, A.xy + side * jitter) <= 0.0) continue;
+    if (trace(g, A.xy + side * jitter, fromStart) <= 0.0) continue;
     sum += B.rgb * k;
     if (B.a > 1.5 && m < 0.5) haze += k;
   }
   sum += uAmbient;
-  if (m > 1.5) sum *= uTopLight;
+  sum *= top;
   gl_FragColor = vec4(sum * 0.5, clamp(haze, 0.0, 1.0));
 }
 `;

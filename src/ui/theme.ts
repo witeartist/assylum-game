@@ -101,9 +101,6 @@ export const DEPTH = {
   floorObjects: -2500,
   shadows: -2000,
   dust: 3500,
-  /** Wall tops cover whatever stands behind (north of) a wall. */
-  caps: 4000,
-  ceiling: 4500,
 } as const;
 
 /** Draw order inside the HUD scene. */
