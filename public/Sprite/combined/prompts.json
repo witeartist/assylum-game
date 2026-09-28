@@ -1,0 +1,38 @@
+{
+  "generator": "built-in image_gen",
+  "assets": [
+    {
+      "name": "naumi_left.png",
+      "refs": [
+        "D:/SOFT/Witelab/output/assylum/characters/naumi/concept_02/naumi_left.png"
+      ],
+      "prompt": "Precise pixel-art sprite correction. The braid is BROKEN: scalp braid ends above ear at x650 y510, lower braid starts separately at x560 y650. REDRAW the entire braid as ONE visibly connected plait: from top scalp beside blue horn curve DOWN IN FRONT OF THE EAR, then uninterrupted over shoulder and chest to gold tie and tuft. Move the existing loose cheek lock aside or replace it with braided links so it cannot hide the connection. Show interlocking white plait segments throughout the connecting stretch beside the temple and ear, no loose smooth hair segment replacing braid, no detached upper and lower pieces. Ear may be partially hidden BEHIND continuous braid. Keep ear bare without jewelry. Preserve all other design, LEFT facing pose, outfit, rabbit, tail, horns, pixel art, elevated camera, full body scale. Transparent background. One sprite."
+    },
+    {
+      "name": "naumi_infected_up.png",
+      "refs": [
+        "D:/SOFT/Witelab/output/assylum/characters/naumi/concept_02/naumi_up.png",
+        "D:/SOFT/Witelab/output/assylum/characters/naumi/infected_concept_01/naumi_infected.png"
+      ],
+      "prompt": "Create BACK view infected sprite. Image1 is exact back pose and geometry to preserve; image2 is approved infection design to transfer. Same character, pixel-art elevated RPG camera, full-body idle. White loose hair, no braid visible from back, NO rabbit charm visible from back, plain reverse satchel. Infected pale skin and dark purple branching veins on hands, ragged gray teal jacket and charcoal skirt, corrupted blue horns with purple tendrils and cyan cracks matching image2 (heavily infected horn on image RIGHT in back view), ONE continuous cyan tail with corrupted violet flame tip. Preserve exact image1 proportions scale silhouette and back orientation. No face, no extra limbs, no scenery, transparent background."
+    },
+    {
+      "name": "naumi_infected_right.png",
+      "refs": [
+        "D:/SOFT/Witelab/output/assylum/characters/naumi/concept_02/naumi_right.png",
+        "D:/SOFT/Witelab/output/assylum/characters/naumi/infected_concept_01/naumi_infected.png"
+      ],
+      "prompt": "Create RIGHT-facing infected profile sprite: nose/toes point screen RIGHT. Image1 is pose/proportions/camera reference; image2 approved infected front design. Transfer exactly that infection/outfit: pale ashen face, sinister slight smile, glowing cyan eye dark socket, branching purple veins on visible temple cheek and hand, prominent near horn corrupted purple with cyan fissures, frayed gray teal jacket charcoal dress, white hair, connected cyan tail with purple corrupted tip behind to left. NO BRAID visible on this side. Rabbit charm hidden on far side. Remove ear jewelry to match infected front. Preserve pixel art, elevated camera, fullbody scale pose. Transparent background, one sprite."
+    },
+    {
+      "name": "naumi_infected_left.png",
+      "prompt": "Create LEFT-facing infected profile sprite, nose/toes point screen LEFT. Image1 is exact pose geometry and corrected continuous braid to preserve. Image2 is approved infected front design to transfer. Preserve braid EXACTLY as image1: continuous interlocking white plait from scalp beside near horn, down IN FRONT of ear and over shoulder to tie; no gaps, no loose lock interrupting it. Keep near ear bare, no earring. Near blue horn on braid side remains mostly blue with a small purple tendril; far horn is heavily corrupted purple with cyan cracks, corresponding to front reference asymmetry. Pale ashen face, cyan glowing eye in dark socket, slight sinister smile; this cheek has much LESS branching infection than opposite cheek in front ref. Frayed gray teal jacket, ragged charcoal dress, matching boots, satchel and tarnished rabbit charm visible on near hip. White long hair. One continuous cyan tail curves behind to screen right ending in violet corrupted flame with cyan cracks. Match pixel-art style and elevated camera, chibi proportions, full-body centered scale. Preserve image1 silhouette and braid connectivity. Transparent background, no scenery or text."
+    }
+  ],
+  "reused": [
+    "naumi_down.png",
+    "naumi_up.png",
+    "naumi_right.png",
+    "naumi_infected_down.png"
+  ]
+}
