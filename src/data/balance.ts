@@ -78,8 +78,8 @@ export const HUNTER_AI = {
   guardTime: 18,
   guardCooldown: 25,
 };
-/** The AI brute: senses (it sees lit runners only this far, tiles — it goes by smell), rush and rest. */
-export const BOSS_AI = { fovHalf: Math.PI * 0.45, sight: 8, hearing: 1.5, rushTime: 3, rushRest: 3 };
+/** The AI brute hears this much further than the fox; its eyes and pace depend on the difficulty (difficulty.ts). */
+export const BOSS_AI = { hearing: 1.5 };
 
 /** Breath held in a hiding spot, seconds; refills twice as fast. */
 export const BREATH = { max: 6, refill: 2, hearRange: TILE * 2.6, alertRange: TILE * 4.5 };
@@ -91,6 +91,20 @@ export const FOX_FLASH = { cooldown: 30, duration: 1, radiusTiles: 9 };
  * `jamRange` tiles for `jam` seconds.
  */
 export const ROAR = { cooldown: 30, noise: 14, jamRange: 8, jam: 2.5 };
+/**
+ * Naumi's kit (Скверна). R: a spark from her horns flies straight and marks the first runner it
+ * hits; Q: a patch of blight on the floor marks whoever steps in it (at most `max` at a time,
+ * working after `arm` s). A marked runner stumbles for a moment, and she sees them anywhere —
+ * through walls — for `mark` s. Distances in tiles, speed in tiles/s.
+ */
+export const BLIGHT = {
+  spark: { cooldown: 14, range: 9, speed: 11, hit: 0.5 },
+  trap: { cooldown: 9, max: 3, life: 150, radius: 0.55, arm: 1.5 },
+  mark: 10,
+  stumble: { time: 1.2, mul: 0.55 },
+  /** She runs a little slower than the fox (the fox: difficulty.ts foxSpeed). */
+  run: 0.95,
+};
 /** The brute tears a hiding spot open this fast (the fox searches for HUNTER_AI.checkTime). */
 export const BRUTE_CHECK_TIME = 0.35;
 

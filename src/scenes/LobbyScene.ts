@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { audio } from "../core/audio";
 import { CANVAS_W } from "../core/constants";
 import { settings, updateSettings } from "../core/settings";
-import { CHARACTERS, HERO_IDS, KITS, type CharacterId, type KitId } from "../data/characters";
+import { CHARACTERS, HERO_IDS, KIT_IDS, KITS, kitAllowed, type CharacterId, type KitId } from "../data/characters";
 import { ROOM_CODE_LENGTH, session } from "../net/session";
 import type { StartInfo } from "../net/protocol";
 import type { GameSceneData } from "./GameScene";
@@ -29,6 +29,9 @@ export class LobbyScene extends Phaser.Scene {
     this.mode = "choose";
     this.character = HERO_IDS[0];
     this.villain = settings.role === "hunter" ? settings.kit ?? "fox" : null;
+    // A remembered own kit brings its hero along.
+    const owner = this.villain ? KITS[this.villain].owner : undefined;
+    if (owner) this.character = owner;
     this.code = "";
     this.ready = false;
     const CX = CANVAS_W / 2;
@@ -50,11 +53,18 @@ export class LobbyScene extends Phaser.Scene {
       const def = CHARACTERS[id];
       const b = button(this, {
         x: CX + (i - (HERO_IDS.length - 1) / 2) * 80, y: charY, w: 65, h: 30, text: def.name, kind: "tag", tone: "neutral",
-        onClick: () => { this.character = id; if (this.mode === "lobby") session.changeCharacter(id); paintChars(); },
+        onClick: () => pickHero(id),
       });
       b.text.setColor(def.color);
       charButtons.set(id, b);
     });
+    const pickHero = (id: CharacterId) => {
+      this.character = id;
+      if (this.mode === "lobby") session.changeCharacter(id);
+      // Another hero's own kit doesn't come along: back to a shared one.
+      if (this.villain && !kitAllowed(this.villain, id)) setWish("fox");
+      paintChars();
+    };
     const paintChars = () => {
       const taken = this.mode === "lobby" ? session.usedCharacters(session.localId ?? undefined) : new Set<CharacterId>();
       charButtons.forEach((b, id) => {
@@ -66,16 +76,25 @@ export class LobbyScene extends Phaser.Scene {
 
     // Who wants to be the villain: the host picks among them (by lot if nobody does).
     const wishY = 480;
-    label(this, CX - 200, wishY, "Хочу быть:", "small", "#786464", { origin: [1, 0.5] });
-    new ToggleRow<Wish>(this, CX + 10, wishY, [
-      { id: "runner", label: "БЕГЛЕЦОМ", tone: "blood" },
-      { id: "fox", label: KITS.fox.name.toUpperCase(), tone: "hunter" },
-      { id: "brute", label: KITS.brute.name.toUpperCase(), tone: "hunter" },
-    ], this.villain ?? "runner", w => {
+    label(this, CX - 170, wishY, "Хочу быть:", "small", "#786464", { origin: [1, 0.5] });
+    const setWish = (w: Wish) => {
+      // A hero's own kit takes that hero (if nobody else has); otherwise it stays as it was.
+      const owner = w !== "runner" ? KITS[w].owner : undefined;
+      if (owner && owner !== this.character) {
+        if (this.mode === "lobby" && session.usedCharacters(session.localId ?? undefined).has(owner)) { wishes.set(this.villain ?? "runner"); return; }
+        this.character = owner;
+        if (this.mode === "lobby") session.changeCharacter(owner);
+        paintChars();
+      }
+      wishes.set(w);
       this.villain = w === "runner" ? null : w;
       updateSettings(this.villain ? { role: "hunter", kit: this.villain } : { role: "runner" });
       if (this.mode === "lobby") session.changeWish(this.villain);
-    }, { w: 110, h: 26 });
+    };
+    const wishes: ToggleRow<Wish> = new ToggleRow<Wish>(this, CX + 55, wishY, [
+      { id: "runner", label: "БЕГЛЕЦОМ", tone: "blood" },
+      ...KIT_IDS.map(id => ({ id, label: KITS[id].name.toUpperCase(), tone: "hunter" as const })),
+    ], this.villain ?? "runner", w => setWish(w), { w: 100, h: 26, gap: 10 });
     label(this, CX, wishY + 24, "Злодей — заражённый герой: из желающих, а если никто не вызвался — по жребию", "tiny", INK.dim);
 
     const create = button(this, { x: CX, y: 140, w: 200, h: 44, text: "СОЗДАТЬ КОМНАТУ", onClick: () => void hostRoom() });
@@ -91,7 +110,11 @@ export class LobbyScene extends Phaser.Scene {
       paintChars();
       if (session.isHost) start.setEnabled(session.allReady());
     });
-    listen(this, session.events, "charAssigned", ch => { this.character = ch; paintChars(); });
+    listen(this, session.events, "charAssigned", ch => {
+      this.character = ch;
+      if (this.villain && !kitAllowed(this.villain, ch)) setWish("fox");
+      paintChars();
+    });
     listen(this, session.events, "start", info => this.scene.start("Game", this.gameData(info)));
     listen(this, session.events, "hostLost", () => {
       status.setText("Хост закрыл комнату");

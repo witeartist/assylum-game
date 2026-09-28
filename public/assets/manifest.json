@@ -1,5 +1,45 @@
 {
  "images": {
+  "characters/naumi_down": {
+   "url": "assets/characters/naumi_down.webp",
+   "w": 257,
+   "h": 320
+  },
+  "characters/naumi_infected_down": {
+   "url": "assets/characters/naumi_infected_down.webp",
+   "w": 270,
+   "h": 320
+  },
+  "characters/naumi_infected_left": {
+   "url": "assets/characters/naumi_infected_left.webp",
+   "w": 220,
+   "h": 320
+  },
+  "characters/naumi_infected_right": {
+   "url": "assets/characters/naumi_infected_right.webp",
+   "w": 231,
+   "h": 320
+  },
+  "characters/naumi_infected_up": {
+   "url": "assets/characters/naumi_infected_up.webp",
+   "w": 239,
+   "h": 320
+  },
+  "characters/naumi_left": {
+   "url": "assets/characters/naumi_left.webp",
+   "w": 236,
+   "h": 320
+  },
+  "characters/naumi_right": {
+   "url": "assets/characters/naumi_right.webp",
+   "w": 232,
+   "h": 320
+  },
+  "characters/naumi_up": {
+   "url": "assets/characters/naumi_up.webp",
+   "w": 247,
+   "h": 320
+  },
   "decals/blood_drag": {
    "url": "assets/decals/blood_drag.webp",
    "w": 256,
@@ -34,6 +74,11 @@
    "url": "assets/decals/bloody_footprints.webp",
    "w": 256,
    "h": 166
+  },
+  "decals/breach_edge": {
+   "url": "assets/decals/breach_edge.webp",
+   "w": 256,
+   "h": 82
   },
   "decals/cracks_1": {
    "url": "assets/decals/cracks_1.webp",
@@ -105,6 +150,31 @@
    "w": 228,
    "h": 384
   },
+  "interactive/door_wood_h": {
+   "url": "assets/interactive/door_wood_h.webp",
+   "w": 384,
+   "h": 375
+  },
+  "interactive/door_wood_h2": {
+   "url": "assets/interactive/door_wood_h2.webp",
+   "w": 384,
+   "h": 160
+  },
+  "interactive/door_wood_h_open": {
+   "url": "assets/interactive/door_wood_h_open.webp",
+   "w": 60,
+   "h": 384
+  },
+  "interactive/door_wood_v": {
+   "url": "assets/interactive/door_wood_v.webp",
+   "w": 77,
+   "h": 384
+  },
+  "interactive/door_wood_v_open": {
+   "url": "assets/interactive/door_wood_v_open.webp",
+   "w": 368,
+   "h": 384
+  },
   "interactive/exit_door_closed": {
    "url": "assets/interactive/exit_door_closed.webp",
    "w": 384,
@@ -114,6 +184,16 @@
    "url": "assets/interactive/exit_door_open.webp",
    "w": 384,
    "h": 300
+  },
+  "interactive/fuse_box": {
+   "url": "assets/interactive/fuse_box.webp",
+   "w": 384,
+   "h": 352
+  },
+  "interactive/fuse_box_on": {
+   "url": "assets/interactive/fuse_box_on.webp",
+   "w": 384,
+   "h": 353
   },
   "interactive/key": {
    "url": "assets/interactive/key.webp",
@@ -128,6 +208,16 @@
   "interactive/locker_open": {
    "url": "assets/interactive/locker_open.webp",
    "w": 169,
+   "h": 384
+  },
+  "interactive/locker_side_closed": {
+   "url": "assets/interactive/locker_side_closed.webp",
+   "w": 145,
+   "h": 384
+  },
+  "interactive/locker_side_open": {
+   "url": "assets/interactive/locker_side_open.webp",
+   "w": 191,
    "h": 384
   },
   "interactive/terminal": {
@@ -215,6 +305,11 @@
    "w": 194,
    "h": 384
   },
+  "props/bookshelf": {
+   "url": "assets/props/bookshelf.webp",
+   "w": 384,
+   "h": 183
+  },
   "props/boxes_stack": {
    "url": "assets/props/boxes_stack.webp",
    "w": 302,
@@ -235,14 +330,59 @@
    "w": 252,
    "h": 384
   },
+  "props/decor_board": {
+   "url": "assets/props/decor_board.webp",
+   "w": 384,
+   "h": 338
+  },
+  "props/decor_clock": {
+   "url": "assets/props/decor_clock.webp",
+   "w": 384,
+   "h": 380
+  },
+  "props/decor_extinguisher": {
+   "url": "assets/props/decor_extinguisher.webp",
+   "w": 172,
+   "h": 384
+  },
+  "props/decor_marks": {
+   "url": "assets/props/decor_marks.webp",
+   "w": 343,
+   "h": 384
+  },
+  "props/decor_pipes": {
+   "url": "assets/props/decor_pipes.webp",
+   "w": 384,
+   "h": 139
+  },
+  "props/decor_window_barred": {
+   "url": "assets/props/decor_window_barred.webp",
+   "w": 384,
+   "h": 309
+  },
+  "props/desk": {
+   "url": "assets/props/desk.webp",
+   "w": 384,
+   "h": 241
+  },
   "props/fallen_chair": {
    "url": "assets/props/fallen_chair.webp",
    "w": 384,
    "h": 305
   },
+  "props/filing_cabinet": {
+   "url": "assets/props/filing_cabinet.webp",
+   "w": 195,
+   "h": 384
+  },
   "props/gurney": {
    "url": "assets/props/gurney.webp",
    "w": 185,
+   "h": 384
+  },
+  "props/hydro_tub": {
+   "url": "assets/props/hydro_tub.webp",
+   "w": 168,
    "h": 384
   },
   "props/instrument_trolley": {
@@ -275,9 +415,19 @@
    "w": 342,
    "h": 384
   },
+  "props/mattress_floor": {
+   "url": "assets/props/mattress_floor.webp",
+   "w": 212,
+   "h": 384
+  },
   "props/medicine_cabinet": {
    "url": "assets/props/medicine_cabinet.webp",
    "w": 301,
+   "h": 384
+  },
+  "props/medicine_cabinet_side": {
+   "url": "assets/props/medicine_cabinet_side.webp",
+   "w": 160,
    "h": 384
   },
   "props/metal_toilet": {
@@ -295,6 +445,11 @@
    "w": 384,
    "h": 309
   },
+  "props/morgue_fridge_side": {
+   "url": "assets/props/morgue_fridge_side.webp",
+   "w": 156,
+   "h": 384
+  },
   "props/nurse_desk": {
    "url": "assets/props/nurse_desk.webp",
    "w": 384,
@@ -309,6 +464,11 @@
    "url": "assets/props/radiator.webp",
    "w": 384,
    "h": 318
+  },
+  "props/radiator_side": {
+   "url": "assets/props/radiator_side.webp",
+   "w": 90,
+   "h": 384
   },
   "props/restraint_bed": {
    "url": "assets/props/restraint_bed.webp",
@@ -325,9 +485,24 @@
    "w": 384,
    "h": 335
   },
+  "props/shelf_boxes_side": {
+   "url": "assets/props/shelf_boxes_side.webp",
+   "w": 229,
+   "h": 384
+  },
+  "props/shower_stall": {
+   "url": "assets/props/shower_stall.webp",
+   "w": 208,
+   "h": 384
+  },
   "props/sink": {
    "url": "assets/props/sink.webp",
    "w": 347,
+   "h": 384
+  },
+  "props/sink_side": {
+   "url": "assets/props/sink_side.webp",
+   "w": 275,
    "h": 384
   },
   "props/straitjacket": {
@@ -360,6 +535,11 @@
    "w": 512,
    "h": 512
   },
+  "surfaces/floor_hydro": {
+   "url": "assets/surfaces/floor_hydro.webp",
+   "w": 512,
+   "h": 512
+  },
   "surfaces/floor_isolation": {
    "url": "assets/surfaces/floor_isolation.webp",
    "w": 512,
@@ -367,6 +547,11 @@
   },
   "surfaces/floor_morgue": {
    "url": "assets/surfaces/floor_morgue.webp",
+   "w": 512,
+   "h": 512
+  },
+  "surfaces/floor_office": {
+   "url": "assets/surfaces/floor_office.webp",
    "w": 512,
    "h": 512
   },

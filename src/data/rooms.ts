@@ -1,4 +1,4 @@
-export type RoomType = "ward" | "procedure" | "canteen" | "isolation" | "storage" | "morgue";
+export type RoomType = "ward" | "procedure" | "canteen" | "isolation" | "storage" | "morgue" | "office" | "hydro";
 
 export interface RoomDef {
   label: string;
@@ -6,7 +6,7 @@ export interface RoomDef {
   floor: string;
 }
 
-export const ROOM_TYPES: RoomType[] = ["ward", "procedure", "canteen", "isolation", "storage", "morgue"];
+export const ROOM_TYPES: RoomType[] = ["ward", "procedure", "canteen", "isolation", "storage", "morgue", "office", "hydro"];
 
 export const ROOMS: Record<RoomType, RoomDef> = {
   ward:      { label: "Палата",      floor: "surfaces/floor_ward" },
@@ -15,6 +15,8 @@ export const ROOMS: Record<RoomType, RoomDef> = {
   isolation: { label: "Изолятор",    floor: "surfaces/floor_isolation" },
   storage:   { label: "Кладовая",    floor: "surfaces/floor_storage" },
   morgue:    { label: "Морг",        floor: "surfaces/floor_morgue" },
+  office:    { label: "Кабинет",     floor: "surfaces/floor_office" },
+  hydro:     { label: "Гидротерапия", floor: "surfaces/floor_hydro" },
 };
 
 export const CORRIDOR_FLOOR = "surfaces/floor_corridor";
@@ -56,4 +58,6 @@ export const DECAL_DENSITY: Record<RoomType | "corridor", Partial<Record<DecalKi
   isolation: { blood: 0.05, trail: 0.015, dirt: 0.05, cracks: 0.04 },
   storage:   { dirt: 0.07, cracks: 0.04, rust: 0.03, puddle: 0.02, debris: 0.02 },
   morgue:    { blood: 0.06, trail: 0.02, puddle: 0.04, dirt: 0.02 },
+  office:    { papers: 0.07, dirt: 0.03, debris: 0.015, blood: 0.01 },
+  hydro:     { puddle: 0.07, rust: 0.04, dirt: 0.02, blood: 0.015 },
 };

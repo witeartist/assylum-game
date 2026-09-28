@@ -119,6 +119,13 @@ export class ToggleRow<T extends string> {
     this.paint();
   }
 
+  /** Show `value` as chosen (without calling onChange). */
+  set(value: T): this {
+    this.value = value;
+    this.paint();
+    return this;
+  }
+
   private paint(): void {
     this.options.forEach((opt, i) => {
       const on = opt.id === this.value;

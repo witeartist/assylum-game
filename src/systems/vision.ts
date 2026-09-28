@@ -27,8 +27,13 @@ export class Vision {
 
   /** How far lamp-lit places stay visible, world px. */
   get sightRange(): number {
-    const w = this.world;
-    return (w.local.kit === "fox" ? Math.max(w.diff.sight, w.diff.foxSight) : w.diff.sight) * TILE;
+    const w = this.world, far = w.local.kit === "fox" || w.local.kit === "blight";
+    return (far ? Math.max(w.diff.sight, w.diff.foxSight) : w.diff.sight) * TILE;
+  }
+
+  /** Naumi (blight) sees the runners she marked wherever they are, through walls. */
+  sensesMark(a: Actor): boolean {
+    return this.viewer.kit === "blight" && a.role === "runner" && a.inPlay && !a.hiding && a.isMarked;
   }
 
   /** How far the viewer makes out unlit things, world px. */
@@ -58,6 +63,11 @@ export class Vision {
 
   /** Can the viewer see this actor right now? */
   canSee(a: Actor): boolean {
+    return this.seesPlainly(a) || (a.inPlay && !a.hiding && this.sensesMark(a));
+  }
+
+  /** Sees this actor with the eyes: in line of sight, and lit or close enough in the dark. */
+  seesPlainly(a: Actor): boolean {
     if (!a.inPlay || a.hiding) return false;
     if (this.photo) return true;
     const v = this.viewer, d = dist(v, a);

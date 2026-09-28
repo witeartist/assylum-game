@@ -1,10 +1,10 @@
 // The heroes and the villain's skill sets. Any hero can be the villain: an infected version of
-// them, with one of the kits below (shared for now; later every hero gets their own).
+// them, with one of the kits below — the shared ones, or a kit of the hero's own (`owner`).
 
 /** The five heroes. */
 export type CharacterId = "Naumi" | "Kuruna" | "Wite" | "Sumrak" | "Yoko";
-/** The villain's skill set: named after the monsters the game had before. */
-export type KitId = "fox" | "brute";
+/** The villain's skill set: the shared ones are named after the monsters the game had before. */
+export type KitId = "fox" | "brute" | "blight";
 
 /** What makes a runner different. Every field is optional; 1 / absent means "as usual". */
 export interface Ability {
@@ -40,6 +40,10 @@ export interface CharacterDef {
   texture: string;
   /** The infected skin (a tinted copy of `texture` until its art arrives). */
   infected: string;
+  /** Four views (front, back, left, right) once the turnaround arrives; they replace `texture`. */
+  views?: { down: string; up: string; left: string; right: string };
+  /** The same for the infected hero; they replace `infected`. */
+  infectedViews?: { down: string; up: string; left: string; right: string };
   /** On-screen sprite height, px. */
   height: number;
   /** Collision box side, px. */
@@ -53,6 +57,8 @@ export interface KitDef {
   id: KitId;
   /** Name of the kit (the monster it comes from). */
   name: string;
+  /** Only this hero has it (their own kit); shared kits have none. */
+  owner?: CharacterId;
   color: string;
   /** Collision box side of an infected hero with this kit, px. */
   body: number;
@@ -67,9 +73,13 @@ export interface KitDef {
 }
 
 const infectedKey = (id: string) => "characters/" + id.toLowerCase() + "_infected";
+const viewKeys = (name: string) => ({
+  down: `characters/${name}_down`, up: `characters/${name}_up`, left: `characters/${name}_left`, right: `characters/${name}_right`,
+});
 
 export const CHARACTERS: Record<CharacterId, CharacterDef> = {
   Naumi:   { id: "Naumi",   name: "Naumi",   color: "#e879a0", texture: "char.Naumi",   infected: infectedKey("Naumi"),  height: 30, body: 22, desc: "Быстрая. Осторожная.",
+    views: viewKeys("naumi"), infectedViews: viewKeys("naumi_infected"),
     ability: { text: "На 10% быстрее, бегает тише", speed: 1.1, runNoise: 0.7 } },
   Kuruna:  { id: "Kuruna",  name: "Kuruna",  color: "#5baef7", texture: "char.Kuruna",  infected: infectedKey("Kuruna"), height: 30, body: 22, desc: "Тихий. Невидимый в тени.",
     ability: { text: "В темноте злодей замечает его вдвое ближе", darkStealth: 0.5 } },
@@ -92,10 +102,26 @@ export const KITS: Record<KitId, KitDef> = {
     text: "Чует след беглецов, лампы рядом гаснут. [Shift] рывок, [E] выбить дверь, [R] рёв",
     threat: "медленный, но идёт по следу; лампы рядом гаснут, рёв глушит фонарики",
   },
+  // Naumi's own: the infection cracked her crystal horns and burns violet in her tail.
+  blight: {
+    id: "blight", name: "Скверна", owner: "Naumi", color: "#a878ff", body: 13, heightMul: 1.15, darkSight: 3.4,
+    text: "Метит беглецов — меченых видит сквозь стены. [R] искра из рогов, [Q] ловушка скверны, [E] обыскать укрытие",
+    threat: "метит искрой и ловушками скверны на полу; меченого видит сквозь стены",
+  },
 };
 
 export const HERO_IDS: CharacterId[] = ["Naumi", "Kuruna", "Wite", "Sumrak", "Yoko"];
-export const KIT_IDS: KitId[] = ["fox", "brute"];
+export const KIT_IDS: KitId[] = ["fox", "brute", "blight"];
+
+/** Kits `character` can take as the villain: the shared ones and their own. */
+export function kitsFor(character: CharacterId): KitId[] {
+  return KIT_IDS.filter(k => kitAllowed(k, character));
+}
+
+export function kitAllowed(kit: KitId, character: CharacterId): boolean {
+  const owner = KITS[kit].owner;
+  return !owner || owner === character;
+}
 
 export function isCharacterId(v: unknown): v is CharacterId {
   return typeof v === "string" && v in CHARACTERS;

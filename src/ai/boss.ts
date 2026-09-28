@@ -2,7 +2,8 @@
 // the scent trail of the nearest runner a few seconds behind and hears far, but sees little in the
 // dark. When it sees you it roars (if it can) and rushes — faster than you walk — then has to
 // catch its breath. It stops at the locker where your trail ends and may tear it open. The lamps
-// around it stutter and die down: that is how you know it's near.
+// around it stutter and die down: that is how you know it's near. How sharp it is depends on the
+// difficulty (difficulty.ts `brute`): on easy it is the gentlest, on hard as it was as the boss.
 import { TILE } from "../core/constants";
 import { dist, worldToTile } from "../core/geom";
 import { BOSS_AI, NOISE } from "../data/balance";
@@ -15,9 +16,6 @@ import { sees, type SightSpec } from "./senses";
 
 type State = "stalk" | "rush" | "rest" | "investigate" | "check" | "stunned";
 
-/** It follows the trail this many seconds behind the runner (closer than 6 tiles: `near`). */
-const TRAIL_LAG = { far: 7, near: 2.5 };
-
 export class BossAI extends MonsterBrain {
   state: State = "stalk";
   private target: Actor | null = null;
@@ -27,8 +25,8 @@ export class BossAI extends MonsterBrain {
   constructor(world: World, actor: Actor) { super(world, actor); }
 
   private spec(): SightSpec {
-    const d = this.world.diff;
-    return { fovHalf: BOSS_AI.fovHalf, range: Math.min(d.foxSight, BOSS_AI.sight) * TILE, dark: KITS.brute.darkSight * TILE, near: TILE * 1.6 };
+    const b = this.world.diff.brute;
+    return { fovHalf: Math.PI * b.fov, range: b.sight * TILE, dark: KITS.brute.darkSight * TILE, near: TILE * 1.6 };
   }
 
   update(dt: number): void {
@@ -58,13 +56,13 @@ export class BossAI extends MonsterBrain {
       case "rush": {
         const p = (seen ?? this.target)?.authPos;
         if (p) this.charge(p, "run", dt);
-        if (this.stateT > BOSS_AI.rushTime) this.enter("rest");
+        if (this.stateT > w.diff.brute.rush) this.enter("rest");
         break;
       }
       case "rest": {
         const p = this.target?.authPos;
         if (p) this.charge(p, "sneak", dt); else a.halt();
-        if (this.stateT > BOSS_AI.rushRest) this.enter(seen ? "rush" : "stalk");
+        if (this.stateT > w.diff.brute.rest) this.enter(seen ? "rush" : "stalk");
         break;
       }
       case "investigate": {
@@ -104,7 +102,7 @@ export class BossAI extends MonsterBrain {
       this.triedSpots.set(spot, this.t);
       if (w.rng.chance(0.55)) { this.checkSpot = spot; this.enter("check"); return; }
     }
-    const mark = w.scent.pointAgo(prey, dist(a, prey.authPos) < TILE * 6 ? TRAIL_LAG.near : TRAIL_LAG.far) ?? prey.authPos;
+    const lag = w.diff.brute, mark = w.scent.pointAgo(prey, dist(a, prey.authPos) < TILE * 6 ? lag.lagNear : lag.lagFar) ?? prey.authPos;
     if (this.goTo(this.walkableNear(mark), "walk", dt, 1)) this.lookAround(dt, 1.2);
   }
 

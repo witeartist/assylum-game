@@ -95,6 +95,58 @@ function take(ch, rate, [a, b], maxLen) {
   return out;
 }
 
+/**
+ * Sharp impacts (footsteps) in a file: [{ at, crest }] — `at` is the loudest 5 ms of each, `crest`
+ * how far it rises over what came just before (a step, not the scuff or the room).
+ */
+function hits(ch, rate, cut) {
+  const n = Math.round(rate * 0.005), len = Math.floor(ch[0].length / n), env = new Float32Array(len);
+  for (let w = 0; w < len; w++) {
+    let s = 0;
+    for (let i = w * n; i < (w + 1) * n; i++) { const v = (ch[0][i] + ch[1][i]) / 2; s += v * v; }
+    env[w] = Math.sqrt(s / n);
+  }
+  const max = Math.max(...env), gap = Math.round((cut.gap ?? 0.2) / 0.005), out = [];
+  for (let w = 0; w < len; w++) {
+    if (env[w] < max * db(-22)) continue;
+    let top = true;
+    for (let k = Math.max(0, w - gap); k <= Math.min(len - 1, w + gap) && top; k++) if (env[k] > env[w] || (env[k] === env[w] && k < w)) top = false;
+    if (!top) continue;
+    // What came before: the median of 30–150 ms earlier.
+    const before = Array.from(env.subarray(Math.max(0, w - 30), Math.max(0, w - 6))).sort((a, b) => a - b);
+    const floor = before.length ? before[before.length >> 1] : 0;
+    const crest = env[w] / Math.max(floor, max * db(-60));
+    if (crest < db(8)) continue;
+    // Start where it rises (at most 15 ms before the peak), not at the scuff.
+    let a = w;
+    while (a > w - 3 && a > 0 && env[a - 1] > env[w] * db(-12)) a--;
+    out.push({ at: Math.max(0, (a - 1) * n), peak: w * n, crest });
+  }
+  return out;
+}
+
+/** An impact cut tight: held to just past its peak, then dying away; rumble out, treble lifted. */
+function shapeHit(ch, rate, h, cut) {
+  const size = Math.min(Math.round(cut.len * rate), ch[0].length - h.at);
+  const hold = h.peak - h.at + Math.round(0.01 * rate), fin = Math.round(0.002 * rate), fout = Math.round(0.006 * rate);
+  const hpK = Math.exp(-2 * Math.PI * (cut.hp ?? 60) / rate), lpK = Math.exp(-2 * Math.PI * 2200 / rate);
+  return ch.map(c => {
+    const o = new Float32Array(size);
+    let hpX = 0, hpY = 0, lp = 0;
+    for (let i = 0; i < size; i++) {
+      const x = c[h.at + i];
+      hpY = hpK * (hpY + x - hpX); hpX = x;                 // one-pole high-pass
+      lp += (1 - lpK) * (hpY - lp);                          // one-pole low-pass for the treble lift
+      let y = hpY + (cut.bright ?? 0) * (hpY - lp);
+      y *= i < hold ? 1 : Math.exp(-(i - hold) / (cut.decay * rate));
+      if (i < fin) y *= i / fin;
+      if (i >= size - fout) y *= (size - 1 - i) / fout;
+      o[i] = y;
+    }
+    return o;
+  });
+}
+
 /** One seamless loop from [from, to) s: the tail crossfades into the head, padded circularly. */
 function makeLoop(ch, rate, cut, range) {
   const a = cut.from !== undefined ? Math.round(cut.from * rate) : range[0];
@@ -159,16 +211,23 @@ for (const [key, def] of Object.entries(SOUNDS)) {
   const perFile = [];
   for (const f of mine) {
     const { rate, ch } = await decode(join(SRC, f));
+    if (def.cut.mode === "hit") {
+      // The sharpest impacts first, then back in the order they come.
+      const best = hits(ch, rate, def.cut).sort((a, b) => b.crest - a.crest).slice(0, def.cut.max ?? 8).sort((a, b) => a.at - b.at);
+      perFile.push(best.map(h => ({ rate, ch, h })));
+      continue;
+    }
     const found = pieces(envelope(ch, rate), rate, def.cut);
     perFile.push(found.map(p => ({ rate, ch, p })));
   }
-  const max = def.cut.mode === "split" ? def.cut.max ?? 8 : def.cut.mode === "loop" ? 1 : perFile.length;
+  const max = def.cut.mode === "split" || def.cut.mode === "hit" ? def.cut.max ?? 8 : def.cut.mode === "loop" ? 1 : perFile.length;
   const picked = [];
   for (let i = 0; picked.length < max && perFile.some(l => l.length > i); i++) for (const l of perFile) if (l[i] && picked.length < max) picked.push(l[i]);
   index[key] = [];
-  for (const [n, { rate, ch, p }] of picked.entries()) {
+  for (const [n, { rate, ch, p, h }] of picked.entries()) {
     let out, loop;
     if (def.cut.mode === "loop") ({ ch: out, loop } = makeLoop(ch, rate, def.cut, p));
+    else if (def.cut.mode === "hit") out = shapeHit(ch, rate, h, def.cut);
     else out = take(ch, rate, p, def.cut.len);
     level(out, rate, def.bus);
     const mp3 = encode(out, rate, !!def.stereo);

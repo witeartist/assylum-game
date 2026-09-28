@@ -144,7 +144,8 @@ export class Lighting {
   /** Every light that can touch the view rect, most important first, plus the viewer's own. */
   frameLights(view: { x: number; y: number; width: number; height: number }, viewer: Actor, max: number): FrameLight[] {
     const w = this.world;
-    const me = w.local, own = me.kit && viewer === me ? (me.kit === "brute" ? LIGHTS.bruteEyes : LIGHTS.hunterEyes) : LIGHTS.personal;
+    const eyes = { fox: LIGHTS.hunterEyes, brute: LIGHTS.bruteEyes, blight: LIGHTS.blightEyes };
+    const me = w.local, own = me.kit && viewer === me ? eyes[me.kit] : LIGHTS.personal;
     const out: FrameLight[] = [this.omni(viewer.x, viewer.y, own, own.radius ?? 1, 1)];
     const cx = view.x + view.width / 2, cy = view.y + view.height / 2;
     const visible = this.lights.filter(l =>
@@ -173,6 +174,8 @@ export class Lighting {
       out.push(this.omni(a.x, a.y, LIGHTS.spill, LIGHTS.spill.radius, k));
     }
     for (const f of w.abilities.flashes) out.push(this.omni(f.x, f.y, LIGHTS.foxFlash, FOX_FLASH.radiusTiles, 1));
+    for (const s of w.abilities.sparks) out.push(this.omni(s.x, s.y, LIGHTS.spark, LIGHTS.spark.radius, 0.85 + 0.15 * Math.sin(this.t * 40)));
+    for (const b of w.abilities.bursts) out.push(this.omni(b.x, b.y, LIGHTS.blightBurst, LIGHTS.blightBurst.radius, Math.max(0, 1 - b.age / 0.6) * (b.hit ? 1 : 0.6)));
     for (const g of w.items.glowLights()) out.push(this.omni(g.x, g.y, LIGHTS.glowstick, LIGHTS.glowstick.radius, g.strength));
 
     const brutes = w.threats().filter(a => a.kit === "brute");

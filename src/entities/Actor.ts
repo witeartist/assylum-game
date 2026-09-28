@@ -5,7 +5,8 @@ import Phaser from "phaser";
 import { TILE } from "../core/constants";
 import type { RunnerStatus, Role, Tile, Vec2 } from "../core/types";
 import { KITS, type CharacterDef, type KitId } from "../data/characters";
-import { BATTERY, DEFAULT_FLASHLIGHT_MODE, EXHAUSTED_MULT, SNEAK_MULT } from "../data/balance";
+import { BATTERY, BLIGHT, DEFAULT_FLASHLIGHT_MODE, EXHAUSTED_MULT, SNEAK_MULT } from "../data/balance";
+import { facingOf, footAnchor, viewsOf, type Facing, type Views } from "../render/characterArt";
 import { DEPTH } from "../ui/theme";
 import { GAITS, NET_FLAG, type Gait, type NetState } from "./state";
 
@@ -81,6 +82,10 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   lightJam = 0;
   /** Seconds the actor is stunned (a runner broke free from it). */
   stunned = 0;
+  /** Seconds a runner stays marked by blight (Naumi sees them through walls). */
+  marked = 0;
+  /** Seconds a runner stumbles (hit by blight): slower. */
+  stumble = 0;
   /** Remote actors: flags from the network (NET_FLAG). */
   netFlags = 0;
   /** Whether the local viewer can see this actor (set by the vision system). */
@@ -100,6 +105,9 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
   private prevY: number;
   private bobT = 0;
   private readonly footOffset: number;
+  /** Four views to turn between (heroes whose turnaround has arrived), else one flipped sprite. */
+  private readonly views: Views | null;
+  private side: Facing = "down";
 
   constructor(scene: Phaser.Scene, o: ActorOptions) {
     const kit = o.kit ? KITS[o.kit] : null;
@@ -122,7 +130,9 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     const scale = look.height / this.frame.height;
     this.setScale(scale).setVisible(false);
     this.footOffset = look.body * 0.3;
+    this.views = viewsOf(o.def, !!kit);
     this.view = scene.add.sprite(o.pos.x, o.pos.y, look.texture).setOrigin(0.5, 1).setScale(scale);
+    if (this.views) this.showView(this.side);
     this.shadow = scene.add.image(o.pos.x, o.pos.y, "fx/shadow").setDepth(DEPTH.shadows).setAlpha(0.8);
     this.shadow.setDisplaySize(look.body * 1.6, look.body * 0.7);
     if (o.control === "remote") {
@@ -157,12 +167,15 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     return b ? { x: b.velocity.x, y: b.velocity.y } : { x: 0, y: 0 };
   }
 
-  /** Speed of a gait right now, px/s (exhaustion and boosts included). */
+  /** Speed of a gait right now, px/s (exhaustion, stumbling and boosts included). */
   gaitSpeed(g: Gait = this.gait): number {
     const walk = this.walkSpeed * (this.exhausted ? EXHAUSTED_MULT : 1);
     const v = g === "sneak" ? this.walkSpeed * SNEAK_MULT : g === "run" && !this.exhausted ? this.runSpeed : walk;
-    return this.stunned > 0 ? 0 : v * this.speedMul;
+    return this.stunned > 0 ? 0 : v * this.speedMul * (this.stumble > 0 ? BLIGHT.stumble.mul : 1);
   }
+
+  /** Marked by blight right now (for another peer's runner: as that peer says). */
+  get isMarked(): boolean { return this.net ? (this.netFlags & NET_FLAG.marked) !== 0 : this.marked > 0; }
 
   /** The flashlight is switched on and shining (a roar makes it die for a moment). */
   get beamOn(): boolean { return this.flashlight.on && this.lightJam <= 0; }
@@ -290,6 +303,7 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     if (this.exhausted) k |= NET_FLAG.exhausted;
     if (this.breakFree > 0) k |= NET_FLAG.canBreakFree;
     if (this.flashlight.charge < BATTERY.low) k |= NET_FLAG.batteryLow;
+    if (this.marked > 0) k |= NET_FLAG.marked;
     return k;
   }
 
@@ -322,10 +336,16 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
     if (speed > 20) this.bobT += dt * speed / 38;
     else this.bobT = 0;
     const phase = Math.sin(this.bobT * Math.PI);
-    // Look where we face (the flashlight direction), keeping the last side when facing up/down.
-    const cx = Math.cos(this.facing);
-    if (cx < -0.25) this.view.setFlipX(true);
-    else if (cx > 0.25) this.view.setFlipX(false);
+    // Look where we face (the flashlight direction): turn to that view, or flip the one sprite
+    // keeping the last side when facing up/down.
+    if (this.views) {
+      const side = facingOf(this.facing, this.side);
+      if (side !== this.side) this.showView(side);
+    } else {
+      const cx = Math.cos(this.facing);
+      if (cx < -0.25) this.view.setFlipX(true);
+      else if (cx > 0.25) this.view.setFlipX(false);
+    }
     const k = Math.min(1, dt * SLIDE_RATE);
     this.slide.x -= this.slide.x * k;
     this.slide.y -= this.slide.y * k;
@@ -334,6 +354,15 @@ export class Actor extends Phaser.Physics.Arcade.Sprite {
       .setRotation(speed > 20 ? phase * BOB_TILT : 0)
       .setDepth(feet);
     this.shadow.setPosition(x, feet - 1);
+  }
+
+  /** Turn to one of the four views, the same height on screen, standing on its feet. */
+  private showView(side: Facing): void {
+    if (!this.views) return;
+    this.side = side;
+    const key = this.views[side];
+    this.view.setTexture(key).setOrigin(footAnchor(key), 1);
+    this.view.setScale(this.figureHeight / this.view.frame.height);
   }
 
   override destroy(fromScene?: boolean): void {

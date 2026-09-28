@@ -7,7 +7,7 @@ import { BATTERY, BREATH } from "../data/balance";
 import { FUSE_ICON, ITEMS_DEF } from "../data/items";
 import { ROOMS } from "../data/rooms";
 import type { World } from "../game/World";
-import { ABILITY } from "../systems/abilities";
+import { ABILITY, ABILITY_Q, type Slot as AbilitySlot } from "../systems/abilities";
 import { CONTROLS_HINT } from "../systems/input";
 import { IconText, Meter, NotePanel, Slot, ToastStack, banner, hstack, label, listen, panel, screenFlash, uiCamera } from "../ui/components";
 import { INK, LAYOUT, SURFACE, TONES } from "../ui/theme";
@@ -15,6 +15,8 @@ import { TerminalModal } from "../ui/terminalModal";
 import { WorldOverlay } from "../ui/worldOverlay";
 
 const SLOT = 34;
+/** Text about blight: a runner marked by Naumi. */
+const BLIGHT_INK = "#c9a8ff";
 
 export class HudScene extends Phaser.Scene {
   private world!: World;
@@ -117,11 +119,15 @@ export class HudScene extends Phaser.Scene {
     this.progress.setVisible(inserting).set(w.power.insertProgress(a));
 
     const act = w.interact.current();
-    const ab = a.kit ? ABILITY[a.kit] : null;
-    const power = ab ? (w.abilities.ready(a) ? ab.ready : ab.name.toLowerCase() + " " + Math.ceil(w.abilities.cooldown(a)) + "с") : "";
-    this.prompt.setIcon(act?.icon ?? (hunter ? "ui/icon_flashlight" : null)).setText([act?.text, power].filter(Boolean).join("  ·  "));
+    const power = (slot: AbilitySlot) => {
+      const ab = a.kit ? (slot === "r" ? ABILITY[a.kit] : ABILITY_Q[a.kit]) : null;
+      if (!ab || !w.abilities.has(a, slot)) return "";
+      return w.abilities.ready(a, slot) ? ab.ready : ab.name.toLowerCase() + " " + Math.ceil(w.abilities.cooldown(a, slot)) + "с";
+    };
+    this.prompt.setIcon(act?.icon ?? (hunter ? "ui/icon_flashlight" : null)).setText([act?.text, power("r"), power("q")].filter(Boolean).join("  ·  "));
     this.prompt.setX(CANVAS_W / 2 - this.prompt.width / 2);
-    this.spectate.setText(w.round.spectateText ?? "");
+    this.spectate.setText(w.round.spectateText ?? (!hunter && a.inPlay && a.marked > 0 ? "СКВЕРНА: тебя видят сквозь стены — " + Math.ceil(a.marked) + "с" : ""));
+    this.spectate.setColor(w.round.spectateText ? TONES.spectate.ink : BLIGHT_INK);
     if (this.fps.visible) this.fps.setText(Math.round(this.game.loop.actualFps) + " FPS");
     this.note.show(w.items.noteOpen);
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RoundTally, decideRoundEnd, outcomeFor, pickVillains } from "../src/game/roundRules";
 import type { PlayerInfo } from "../src/net/protocol";
-import type { CharacterId, KitId } from "../src/data/characters";
+import { kitAllowed, kitsFor, type CharacterId, type KitId } from "../src/data/characters";
 
 describe("round tally", () => {
   it("never overwrites a final result", () => {
@@ -83,5 +83,25 @@ describe("who is the villain", () => {
     const r = pickVillains(room([null]), seq(0));
     expect(r.villains).toEqual({});
     expect(r.aiVillain?.character).not.toBe("Naumi");
+  });
+
+  it("a hero's own kit goes only with that hero", () => {
+    // Naumi asks for her own kit and gets it; Kuruna asking for it gets a shared one.
+    expect(pickVillains(room(["blight", null]), seq(0)).villains).toEqual({ p0: "blight" });
+    for (const x of [0, 0.4, 0.99]) {
+      const kit = pickVillains(room([null, "blight"]), seq(x)).villains.p1;
+      expect(kitAllowed(kit, "Kuruna")).toBe(true);
+      expect(kit).not.toBe("blight");
+    }
+    // Drafted, or played by the AI: always a kit the hero can take.
+    for (let i = 0; i < 20; i++) {
+      const r = Math.random;
+      const drafted = pickVillains(room([null, null, null]), r);
+      for (const [id, kit] of Object.entries(drafted.villains)) expect(kitAllowed(kit, room([null, null, null])[id].character)).toBe(true);
+      const ai = pickVillains(room([null]), r).aiVillain!;
+      expect(kitAllowed(ai.kit, ai.character)).toBe(true);
+    }
+    expect(kitsFor("Naumi")).toContain("blight");
+    expect(kitsFor("Yoko")).toEqual(["fox", "brute"]);
   });
 });

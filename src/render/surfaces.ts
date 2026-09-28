@@ -191,6 +191,18 @@ export const SURFACES: Record<string, SurfaceSpec> = {
     ceramic(ctx, SIZE, rng, 9, [175, 196, 212], "rgba(50,58,66,0.55)", 0.05);
     stains(ctx, SIZE, rng, 7, "rgba(30,40,50,0.3)", 10, 34);
   }, 0.25) },
+  "surfaces/floor_office": { tilesAcross: 4, draw: floor(19, "#4a3a2c", (ctx, rng) => {
+    // Parquet planks in a herringbone-ish zigzag.
+    ctx.strokeStyle = "rgba(20,14,10,0.5)"; ctx.lineWidth = 1;
+    for (let y = -16; y < SIZE + 16; y += 16) for (let x = 0; x < SIZE; x += 16) {
+      ctx.beginPath(); ctx.moveTo(x, y + ((x / 16) % 2 ? 16 : 0)); ctx.lineTo(x + 16, y + ((x / 16) % 2 ? 0 : 16)); ctx.stroke();
+    }
+    scratches(ctx, SIZE, rng, 30, "rgba(200,170,130,0.1)", 20);
+  }, 0.3) },
+  "surfaces/floor_hydro": { tilesAcross: 4, draw: floor(20, "#b8b6ae", (ctx, rng) => {
+    ceramic(ctx, SIZE, rng, 16, [214, 210, 200], "rgba(70,66,60,0.5)", 0.05);
+    stains(ctx, SIZE, rng, 10, "rgba(120,60,20,0.25)", 8, 30);
+  }, 0.25) },
   "surfaces/wall_top": { tilesAcross: 4, draw: floor(18, "#202426", (ctx, rng) => {
     cracks(ctx, SIZE, rng, 6, "rgba(0,0,0,0.5)");
     stains(ctx, SIZE, rng, 8, "rgba(0,0,0,0.3)", 10, 40);

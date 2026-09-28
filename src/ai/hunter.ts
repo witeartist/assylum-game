@@ -1,16 +1,19 @@
-// The AI villain with the fox kit (once the hunter Foxmind). It sees what is in front of it and
-// lit (or close in the dark), hears footsteps, alarms and breathing, and remembers: it chases what
-// it sees, runs to where you were headed when you vanished, searches the area and the hiding
-// spots around it, goes to look at every suspicious sound, checks the locker it saw you climb
-// into, patrols the places where runners were noticed and guards the exit when the escape is near.
+// The AI villain with the fox kit (once the hunter Foxmind) — and with Naumi's blight. It sees
+// what is in front of it and lit (or close in the dark), hears footsteps, alarms and breathing,
+// and remembers: it chases what it sees, runs to where you were headed when you vanished,
+// searches the area and the hiding spots around it, goes to look at every suspicious sound, checks
+// the locker it saw you climb into, patrols the places where runners were noticed and guards the
+// exit when the escape is near. With blight it shoots sparks at runners it sees, leaves patches
+// where runners must pass, and knows where everyone it marked is.
 import { TILE } from "../core/constants";
 import { dist, tileCenter, tileIndex, worldToTile } from "../core/geom";
 import type { Tile } from "../core/types";
-import { HUNTER_AI } from "../data/balance";
+import { BLIGHT, HUNTER_AI } from "../data/balance";
 import { KITS } from "../data/characters";
 import type { Actor } from "../entities/Actor";
 import type { World } from "../game/World";
 import type { HideSpot } from "../systems/hiding";
+import { hasLineOfSight } from "../world/grid";
 import { roomCenter, roomInteriorTiles, type Room } from "../world/level";
 import { MonsterBrain, NOISE_INTEREST } from "./monster";
 import { sees, type SightSpec } from "./senses";
@@ -35,13 +38,13 @@ export class HunterAI extends MonsterBrain {
     this.guardTile = [2, 3, 1].map(d => ({ col: e.col, row: e.row + d })).find(t => !world.grid.isSolid(t.col, t.row)) ?? e;
     // Saw someone climb into a locker: that's the first place to look.
     world.events.on("hidingChanged", ({ actor: r }) => {
-      if (r.role === "runner" && r.hiding && sees(world, actor, r, this.spec(), true)) this.checkSpot = world.hiding.spotOf(r);
+      if (r.role === "runner" && r.hiding && (this.marks(r) || sees(world, actor, r, this.spec(), true))) this.checkSpot = world.hiding.spotOf(r);
     });
   }
 
   private spec(): SightSpec {
-    const d = this.world.diff;
-    return { fovHalf: HUNTER_AI.fovHalf, range: d.foxSight * TILE, dark: KITS.fox.darkSight * TILE * 0.8, near: HUNTER_AI.nearSense * TILE };
+    const d = this.world.diff, kit = KITS[this.actor.kit ?? "fox"];
+    return { fovHalf: HUNTER_AI.fovHalf, range: d.foxSight * TILE, dark: kit.darkSight * TILE * 0.8, near: HUNTER_AI.nearSense * TILE };
   }
 
   update(dt: number): void {
@@ -54,6 +57,40 @@ export class HunterAI extends MonsterBrain {
     this.listen();
     this.decide(saw);
     this.act(dt);
+    if (a.kit === "blight") this.blight(saw);
+  }
+
+  /** With blight, a runner it marked is as good as seen, wherever it is. */
+  private marks(r: Actor): boolean { return this.actor.kit === "blight" && r.isMarked; }
+
+  /** Blight: a spark at a runner in sight it hasn't marked yet; patches where runners must pass. */
+  private blight(saw: boolean): void {
+    const w = this.world, a = this.actor, ab = w.abilities, t = this.target;
+    if (saw && t && !t.isMarked && ab.ready(a, "r")) {
+      const p = t.authPos, d = dist(a, p);
+      if (d > TILE * 1.2 && d < BLIGHT.spark.range * TILE * 0.9 && hasLineOfSight(w.sight, a, p)) {
+        // Lead the runner a little: where it will be when the spark gets there.
+        const v = t.velocity, lead = d / (BLIGHT.spark.speed * TILE);
+        const aim = { x: p.x + v.x * lead, y: p.y + v.y * lead };
+        const to = hasLineOfSight(w.sight, a, aim) ? aim : p;
+        a.facing = Math.atan2(to.y - a.y, to.x - a.x);
+        ab.use(a, false, a, "r", a.facing);
+      }
+    }
+    const calm = this.state === "patrol" || this.state === "search" || this.state === "investigate" || this.state === "guard";
+    if (calm && ab.ready(a, "q") && this.trapSpot()) ab.use(a, false, a, "q");
+  }
+
+  /** Here runners must pass: a doorway, or next to what they need; and none of its patches near. */
+  private trapSpot(): boolean {
+    const w = this.world, a = this.actor;
+    if (w.abilities.traps.some(t => t.owner === a && dist(t, a) < TILE * 4)) return false;
+    const near = (p: { x: number; y: number }, tiles: number) => dist(a, p) < tiles * TILE;
+    return w.gates.gates.some(g => near(g, 1))
+      || w.objectives.keys.some(k => !k.taken && near(k.sprite, 2))
+      || w.power.groundFuses().some(f => near(f, 2))
+      || (!!w.power.box && !w.power.on && near(w.power.box, 2.5))
+      || near(w.objectives.exit.point, 3);
   }
 
   /** Eyes: runners in view build up suspicion; past the reaction time it's a chase. */
@@ -62,9 +99,10 @@ export class HunterAI extends MonsterBrain {
     let best: Actor | null = null, bestD = Infinity;
     for (const r of w.runners()) {
       const s0 = this.suspicion.get(r) ?? 0;
-      if (!sees(w, a, r, spec)) { if (s0 > 0) this.suspicion.set(r, Math.max(0, s0 - dt * 0.5)); continue; }
+      const marked = this.marks(r) && r.inPlay && !r.hiding;
+      if (!marked && !sees(w, a, r, spec)) { if (s0 > 0) this.suspicion.set(r, Math.max(0, s0 - dt * 0.5)); continue; }
       const p = r.authPos, d = dist(a, p);
-      const s = s0 + dt * (d < TILE * 4 ? 3 : 1);
+      const s = marked ? Math.max(s0, w.diff.reaction) : s0 + dt * (d < TILE * 4 ? 3 : 1);
       this.suspicion.set(r, s);
       this.warm(p, dt * 3);
       if (s >= w.diff.reaction || r === this.target) { if (d < bestD) { bestD = d; best = r; } }
@@ -122,7 +160,7 @@ export class HunterAI extends MonsterBrain {
         const ls = this.lastSeen!;
         if (this.phase === 0) {
           this.phase = 1;
-          if (w.abilities.ready(a) && dist(a, ls) < TILE * 9) w.abilities.use(a);
+          if (a.kit === "fox" && w.abilities.ready(a) && dist(a, ls) < TILE * 9) w.abilities.use(a);
         }
         const guess = this.walkableNear({ x: ls.x + ls.vx * 1.2, y: ls.y + ls.vy * 1.2 });
         if (this.goTo(guess, "run", dt, 0.4)) this.enter("search");
@@ -135,7 +173,7 @@ export class HunterAI extends MonsterBrain {
           if (this.goTo(this.walkableNear(c), c.strength >= 2 && far ? "run" : "walk", dt)) {
             this.phase = 1;
             this.waitT = 1.8;
-            if (c.strength >= 2 && w.abilities.ready(a) && !w.lighting.isLit(a)) w.abilities.use(a);
+            if (a.kit === "fox" && c.strength >= 2 && w.abilities.ready(a) && !w.lighting.isLit(a)) w.abilities.use(a);
           }
         } else {
           this.lookAround(dt);

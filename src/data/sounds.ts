@@ -11,12 +11,17 @@ export type Bus = "music" | "sfx" | "ambience";
  * - whole: the file without its silent ends;
  * - split: every separate sound in the file (steps, clicks, beats), at most `max`; `gap` — the
  *   least time between two of them, s (a heartbeat's lub-dub stays one); `len` — the longest piece;
- * - loop: one seamless loop (from `from` to `to`, s), its ends crossfaded over `fade` s.
+ * - loop: one seamless loop (from `from` to `to`, s), its ends crossfaded over `fade` s;
+ * - hit: every sharp impact in the file (footsteps), cut tight — from just before its loudest
+ *   instant, not the scuff before it, for `len` s, dying away over `decay` s (a time constant),
+ *   so the room's boom and the shuffle between steps stay out. The sharpest `max` impacts at
+ *   least `gap` s apart; `hp` cuts the rumble under this many Hz, `bright` lifts the treble (0..1).
  */
 export type Cut =
   | { mode: "whole"; len?: number }
   | { mode: "split"; gap?: number; max?: number; len?: number }
-  | { mode: "loop"; from?: number; to?: number; fade?: number };
+  | { mode: "loop"; from?: number; to?: number; fade?: number }
+  | { mode: "hit"; len: number; decay: number; gap?: number; max?: number; hp?: number; bright?: number };
 
 export interface SoundDef {
   /** Every raw file whose name contains this. */
@@ -35,10 +40,10 @@ export interface SoundDef {
 
 export const SOUNDS = {
   // ── Steps ──
-  stepWalk:     { match: "single footstep, hard-soled", cut: { mode: "split", gap: 0.3, max: 10, len: 0.6 }, bus: "sfx", volume: 0.45, range: 7, pitch: 0.08 },
-  stepRun:      { match: "single running footstep", cut: { mode: "split", gap: 0.3, max: 12, len: 0.5 }, bus: "sfx", volume: 0.6, range: 12, pitch: 0.08 },
-  stepMonster:  { match: "heavy slow monster footsteps", cut: { mode: "split", gap: 0.5, max: 12, len: 1 }, bus: "sfx", volume: 0.85, range: 14, pitch: 0.06 },
-  stepClaws:    { match: "footsteps with claws", cut: { mode: "split", gap: 0.15, max: 12, len: 0.4 }, bus: "sfx", volume: 0.6, range: 10, pitch: 0.08 },
+  stepWalk:     { match: "single footstep, hard-soled", cut: { mode: "hit", len: 0.24, decay: 0.045, gap: 0.35, max: 10, hp: 120, bright: 0.6 }, bus: "sfx", volume: 0.42, range: 7, pitch: 0.07 },
+  stepRun:      { match: "single running footstep", cut: { mode: "hit", len: 0.22, decay: 0.04, gap: 0.2, max: 12, hp: 100, bright: 0.5 }, bus: "sfx", volume: 0.55, range: 12, pitch: 0.07 },
+  stepMonster:  { match: "heavy slow monster footsteps", cut: { mode: "hit", len: 0.55, decay: 0.13, gap: 0.45, max: 12, hp: 35 }, bus: "sfx", volume: 0.85, range: 14, pitch: 0.06 },
+  stepClaws:    { match: "footsteps with claws", cut: { mode: "hit", len: 0.16, decay: 0.035, gap: 0.12, max: 12, hp: 250, bright: 0.3 }, bus: "sfx", volume: 0.6, range: 10, pitch: 0.08 },
   // ── Doors, lockers, beds ──
   doorOpen:     { match: "wooden door slowly creaking", cut: { mode: "split", gap: 0.8, max: 5, len: 1.8 }, bus: "sfx", volume: 0.55, range: 12, pitch: 0.06 },
   doorSlam:     { match: "door slamming shut", cut: { mode: "whole", len: 1.4 }, bus: "sfx", volume: 0.7, range: 16, pitch: 0.05 },

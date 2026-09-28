@@ -1,4 +1,4 @@
-// World-space effects triggered by events: corpses and camera shake.
+// World-space effects triggered by events: corpses, camera shake, being marked by blight.
 import type { World } from "../game/World";
 import { TILE } from "../core/constants";
 import { DEPTH } from "../ui/theme";
@@ -13,5 +13,14 @@ export function bindEffects(world: World): void {
     body.setScale(TILE * 0.9 / body.width);
     const strong = actor === world.local;
     world.shake(strong ? 400 : 200, strong ? 0.02 : 0.01);
+  });
+  world.events.on("blightHit", ({ id, by }) => {
+    if (id === world.local.id) {
+      world.toast("Скверна! Тебя видят сквозь стены", "hunter");
+      world.events.emit("screenFlash", { color: 0x6a2cc0, alpha: 0.35, ms: 700 });
+      world.shake(200, 0.008);
+    } else if (by === world.local.id) {
+      world.toast("Метка! " + (world.byId(id)?.def.name ?? "беглец") + " виден сквозь стены", "hunter");
+    }
   });
 }

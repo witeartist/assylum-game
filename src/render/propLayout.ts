@@ -28,7 +28,7 @@ const SPAN = 0.96;
  * Layout of `key` standing on the w × h tiles from (col, row). `height`: on-screen height, px —
  * the picture keeps its proportions and never gets wider than the footprint.
  */
-export function standingLayout(world: World, key: string, col: number, row: number, w: number, h: number, height?: number): PropLayout {
+export function standingLayout(world: World, key: string, col: number, row: number, w: number, h: number, height?: number, side = false): PropLayout {
   const frame = world.scene.textures.getFrame(key);
   const aspect = frame && frame.height > 0 ? frame.width / frame.height : 1;
   const maxW = w * TILE * SPAN;
@@ -44,13 +44,15 @@ export function standingLayout(world: World, key: string, col: number, row: numb
     if (!rows.every(r => wall(c, r))) return null;
     const thin = rows.every(r => code(c, r) >= THIN && (code(c, r) & (ARM_N | ARM_S)) !== 0);
     const edge = dir < 0 ? col * TILE : (col + w) * TILE;
-    return edge + (thin ? -dir * (TILE / 2 - THIN_WALL / 2) : 0);
+    // The partition's face is (TILE - THIN_WALL) / 2 into the wall's tile: closer than the tile edge.
+    return edge + (thin ? dir * (TILE / 2 - THIN_WALL / 2) : 0);
   };
   const left = sideFace(col - 1, -1), right = sideFace(col + w, 1);
   const x = left !== null ? left + pw / 2 + 1 : right !== null ? right - pw / 2 - 1 : (col + w / 2) * TILE;
 
   let base = (row + h) * TILE - 1;
-  const northWall = cols.every(c => wall(c, row - 1));
+  // A side-view piece stands along its wall on the whole footprint, even in a corner.
+  const northWall = !side && cols.every(c => wall(c, row - 1));
   const southBlock = cols.every(c => wall(c, row + h) && code(c, row + h) < THIN);
   if (small && northWall) base = row * TILE + Math.max(6, Math.min(h * TILE - 1, Math.round(ph * 0.5)));
   // A whole wall in front hides the floor right behind it: stand where it can be seen.
@@ -58,11 +60,12 @@ export function standingLayout(world: World, key: string, col: number, row: numb
   else if (small) base = (row + h) * TILE - 3;
 
   const foot: Box = small
-    ? { x0: x - pw / 2, x1: x + pw / 2, y0: northWall ? row * TILE : base - Math.max(6, Math.min(ph, TILE) * 0.45), y1: base }
+    ? { x0: x - pw / 2, x1: x + pw / 2, y0: northWall || side ? row * TILE : base - Math.max(6, Math.min(ph, TILE) * 0.45), y1: base }
     : { x0: col * TILE, x1: (col + w) * TILE, y0: row * TILE, y1: (row + h) * TILE };
   return { x, base, w: pw, h: ph, foot };
 }
 
 export function furnitureLayout(world: World, f: FurniturePiece): PropLayout {
-  return standingLayout(world, f.key, f.col, f.row, f.w, f.h, FURNITURE_BY_KEY.get(f.key)?.height);
+  const def = FURNITURE_BY_KEY.get(f.key);
+  return standingLayout(world, f.key, f.col, f.row, f.w, f.h, def?.height, def?.spot === "side");
 }

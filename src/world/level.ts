@@ -9,7 +9,8 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 export interface Room extends Rect { type: RoomType; }
 
 /** A piece of furniture; (col, row) is its top-left tile, w × h its footprint. */
-export interface FurniturePiece { key: string; col: number; row: number; w: number; h: number; solid: boolean; }
+/** `flip`: side-view art mirrored (it stands against the east wall). */
+export interface FurniturePiece { key: string; col: number; row: number; w: number; h: number; solid: boolean; flip?: boolean; }
 
 export interface LockedDoor {
   /** Floor tiles on the room ring that are walled off until the terminal is used. */

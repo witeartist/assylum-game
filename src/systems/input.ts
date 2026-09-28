@@ -2,7 +2,7 @@
 // keyboard layout. The flashlight follows the mouse while it moves, otherwise the walking direction.
 import { FLASHLIGHT_MODES } from "../data/balance";
 import type { World } from "../game/World";
-import { ABILITY } from "./abilities";
+import { ABILITY, ABILITY_Q, type Slot } from "./abilities";
 
 const HELD = {
   up: ["KeyW", "ArrowUp"],
@@ -27,6 +27,7 @@ export const CONTROLS_HINT = {
   runner: "WASD — шаг  |  Shift — бег  |  C — тихо  |  мышь — свет  |  R — фонарик, V — луч  |  E — действие  |  1/2/3 — предметы",
   fox: "WASD — шаг  |  Shift — бег  |  C — тихо  |  мышь — взгляд  |  R — вспышка  |  E — обыскать укрытие",
   brute: "WASD — шаг  |  Shift — рывок  |  мышь — взгляд  |  R — рёв (гасит фонарики)  |  E — выбить дверь, вскрыть укрытие",
+  blight: "WASD — шаг  |  Shift — бег  |  мышь — прицел  |  R — искра (метит)  |  Q — ловушка скверны  |  E — обыскать укрытие",
 };
 
 export class InputSystem {
@@ -82,7 +83,7 @@ export class InputSystem {
       case "KeyF": w.interact.run(); break;
       case "KeyR": this.useLight(); break;
       case "KeyV": this.cycleBeam(); break;
-      case "KeyQ": w.items.abilityLocal(); break;
+      case "KeyQ": if (w.local.kit) this.useAbility("q"); else w.items.abilityLocal(); break;
       case "Tab": ev.preventDefault(); w.round.cycleSpectate(); break;
       case "Escape":
         if (w.doors.minigame.active) w.doors.closeMinigame(false);
@@ -92,16 +93,20 @@ export class InputSystem {
     }
   }
 
+  /** The villain's R or Q: its kit's ability (a spark flies where the villain looks). */
+  private useAbility(slot: Slot): void {
+    const w = this.world, a = w.local;
+    const ab = slot === "q" ? a.kit && ABILITY_Q[a.kit] : a.kit && ABILITY[a.kit];
+    if (!ab || !w.round.canAct()) return;
+    if (w.abilities.use(a, false, a, slot)) w.toast(ab.shout, a.kit === "brute" ? "blood" : a.kit === "blight" ? "hunter" : "key");
+    else w.toast(ab.name + ": перезарядка " + Math.ceil(w.abilities.cooldown(a, slot)) + "с", "neutral");
+  }
+
   /** R: runners toggle the flashlight, the villain uses its kit's ability. */
   private useLight(): void {
     const w = this.world, a = w.local;
     if (!w.round.canAct()) return;
-    if (a.kit) {
-      const ab = ABILITY[a.kit];
-      if (w.abilities.use(a)) w.toast(ab.shout, a.kit === "brute" ? "blood" : "key");
-      else w.toast(ab.name + ": перезарядка " + Math.ceil(w.abilities.cooldown(a)) + "с", "neutral");
-      return;
-    }
+    if (a.kit) { this.useAbility("r"); return; }
     if (!a.flashlight.on && a.flashlight.charge <= 0) { w.toast("Батарейка села — найди новую", "bad"); return; }
     a.flashlight.on = !a.flashlight.on;
     w.toast(a.flashlight.on ? "Фонарик включён" : "Фонарик выключен", a.flashlight.on ? "warn" : "neutral");

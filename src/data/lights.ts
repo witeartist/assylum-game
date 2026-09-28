@@ -15,6 +15,11 @@ export const LIGHTS = {
   hunterEyes: { color: [0.95, 0.55, 0.5],  intensity: 0.7, radius: 5.2 },
   /** The brute goes by smell more than by sight: a dimmer, shorter glow. */
   bruteEyes:  { color: [0.6, 0.85, 0.5],   intensity: 0.55, radius: 3.4 },
+  /** Naumi infected: the violet flame of her tail. */
+  blightEyes: { color: [0.62, 0.48, 1.0],  intensity: 0.62, radius: 4.2 },
+  /** A spark from her horns in flight, and blight bursting. */
+  spark:      { color: [0.45, 0.9, 1.0],   intensity: 1.1, radius: 2.4 },
+  blightBurst:{ color: [0.7, 0.45, 1.0],   intensity: 1.4, radius: 3.2 },
   glowstick:  { color: [0.35, 1.0, 0.45],  intensity: 0.85, radius: 3 },
   /** A fuse lying on the floor gives off a faint electric glint. */
   fuse:       { color: [0.45, 0.8, 1.0],   intensity: 0.45, radius: 1.1 },

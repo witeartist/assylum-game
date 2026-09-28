@@ -60,11 +60,19 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
     !open.isSolid(t.col, t.row) && !taken.has(tileIndex(t.col, t.row)) && !keepClear.has(tileIndex(t.col, t.row)));
   const wall = (c: number, r: number) => rows[r]?.[c] === "#";
   const touchesWall = (tiles: Tile[]) => tiles.some(t => wall(t.col - 1, t.row) || wall(t.col + 1, t.row) || wall(t.col, t.row - 1) || wall(t.col, t.row + 1));
-  /** Stands where it belongs: backed by the north wall, touching a wall, or clear of walls. */
+  /** The west (-1) or east (1) wall backs every tile of the footprint's side, else 0. */
+  const sideWall = (tiles: Tile[]): -1 | 0 | 1 => {
+    const c0 = Math.min(...tiles.map(t => t.col)), c1 = Math.max(...tiles.map(t => t.col));
+    if (tiles.every(t => t.col !== c0 || wall(c0 - 1, t.row))) return -1;
+    if (tiles.every(t => t.col !== c1 || wall(c1 + 1, t.row))) return 1;
+    return 0;
+  };
+  /** Stands where it belongs: backed by the north wall, a side wall, touching a wall, or clear of walls. */
   const fits = (def: FurnitureDef, tiles: Tile[]) =>
     def.spot === "north" ? tiles.filter(t => t.row === tiles[0].row).every(t => wall(t.col, t.row - 1))
-      : def.spot === "wall" ? touchesWall(tiles)
-        : !touchesWall(tiles);
+      : def.spot === "side" ? sideWall(tiles) !== 0
+        : def.spot === "wall" ? touchesWall(tiles)
+          : !touchesWall(tiles);
   /** No other solid piece right next to this one (keeps walkways between furniture). */
   const spaced = (tiles: Tile[], friends: Tile[] = []) => tiles.every(t =>
     [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dc, dr]) => {
@@ -88,7 +96,9 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
       taken.add(tileIndex(t.col, t.row));
       if (def.solid) blocked.setSolid(t, true);
     }
-    pieces.push({ key: def.key, col, row, w: def.w, h: def.h, solid: def.solid });
+    const piece: FurniturePiece = { key: def.key, col, row, w: def.w, h: def.h, solid: def.solid };
+    if (def.spot === "side" && sideWall(tiles) > 0) piece.flip = true;
+    pieces.push(piece);
     return tiles;
   };
   /** The companion piece right below (or beside) its parent. */
@@ -107,6 +117,7 @@ export function placeFurniture(rng: Rng, level: LevelData, reserved: Set<number>
     if (maxCol < area.x || maxRow < area.y) return null;
     switch (def.spot) {
       case "north": return [rng.int(area.x, maxCol), area.y];
+      case "side": return [rng.chance(0.5) ? area.x : maxCol, rng.int(area.y, maxRow)];
       case "center":
         if (maxCol - 1 < area.x + 1 || maxRow - 1 < area.y + 1) return null;
         return [rng.int(area.x + 1, maxCol - 1), rng.int(area.y + 1, maxRow - 1)];
