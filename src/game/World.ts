@@ -16,7 +16,7 @@ import type { Objectives } from "../systems/objectives";
 import type { Doors } from "../systems/doors";
 import type { Hiding } from "../systems/hiding";
 import type { Lighting } from "../systems/lighting";
-import type { Abilities } from "../systems/abilities";
+import type { Abilities, Slot } from "../systems/abilities";
 import type { StandingProp, Vision } from "../systems/vision";
 import type { Noise, NoiseKind } from "../systems/noise";
 import type { Director } from "../systems/director";
@@ -60,8 +60,10 @@ export interface GameEvents {
   noiseMade: { x: number; y: number; radius: number; kind: NoiseKind; by: string };
   /** The building woke up (director.ts). */
   buildingAwake: { remote: boolean };
-  /** A villain used its R (a flash or a roar) at (x, y). */
-  abilityUsed: { kind: KitId; by: string; x: number; y: number; remote: boolean };
+  /** A villain used an ability (R: flash, roar or spark aimed at `angle`; Q: blight) at (x, y). */
+  abilityUsed: { kind: KitId; slot: Slot; by: string; x: number; y: number; angle: number; remote: boolean };
+  /** Runner `id` was hit by blight from villain `by` at (x, y): by a spark, or in trap `trap`. */
+  blightHit: { id: string; by: string; trap: string | null; x: number; y: number; remote: boolean };
   /** Host: the round is over; final status of every runner. */
   roundResults: { results: Record<string, RunnerStatus> };
   toast: { text: string; tone: Tone };

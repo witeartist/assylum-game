@@ -31,6 +31,8 @@ export class Vitals {
       if (a.adrenaline > 0) a.adrenaline = Math.max(0, a.adrenaline - dt);
       staminaStep(a, a.gait === "run", Math.hypot(v.x, v.y) > 20, dt);
       if (a.lightJam > 0) a.lightJam = Math.max(0, a.lightJam - dt);
+      if (a.marked > 0) a.marked = Math.max(0, a.marked - dt);
+      if (a.stumble > 0) a.stumble = Math.max(0, a.stumble - dt);
       this.battery(a, dt);
     }
   }

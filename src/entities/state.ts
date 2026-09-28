@@ -5,7 +5,7 @@ export type Gait = "sneak" | "walk" | "run";
 export const GAITS: Gait[] = ["sneak", "walk", "run"];
 
 /** Bits of NetState.k. */
-export const NET_FLAG = { exhausted: 1, canBreakFree: 2, batteryLow: 4, carrying: 8 } as const;
+export const NET_FLAG = { exhausted: 1, canBreakFree: 2, batteryLow: 4, carrying: 8, marked: 16 } as const;
 
 /** Network state of an actor (positions in world px, velocities in px/s). */
 export interface NetState {

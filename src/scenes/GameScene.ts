@@ -3,7 +3,7 @@ import Phaser from "phaser";
 import { WORLD_W, WORLD_H } from "../core/constants";
 import { randomSeed } from "../core/rng";
 import type { Role } from "../core/types";
-import { HERO_IDS, KIT_IDS, type CharacterId, type KitId } from "../data/characters";
+import { HERO_IDS, KITS, kitAllowed, kitsFor, type CharacterId, type KitId } from "../data/characters";
 import { DIFFICULTIES, type DifficultyId } from "../data/difficulty";
 import { session } from "../net/session";
 import { World, type NetMode } from "../game/World";
@@ -18,6 +18,7 @@ import { addDust } from "../render/dust";
 import { Shadows } from "../render/shadows";
 import { Outlines } from "../render/outlines";
 import { Footprints } from "../render/footprints";
+import { AbilityFx } from "../render/abilityFx";
 import { Soundscape } from "../systems/sound";
 import { LIGHTING_PIPELINE, LightingPipeline } from "../render/lighting/LightingPipeline";
 import { Lighting } from "../systems/lighting";
@@ -59,6 +60,7 @@ export class GameScene extends Phaser.Scene {
   private shadows: Shadows | null = null;
   private outlines: Outlines | null = null;
   private footprints: Footprints | null = null;
+  private abilityFx: AbilityFx | null = null;
   private soundscape: Soundscape | null = null;
   private failed = false;
 
@@ -71,6 +73,7 @@ export class GameScene extends Phaser.Scene {
     this.shadows = null;
     this.outlines = null;
     this.footprints = null;
+    this.abilityFx = null;
     this.soundscape = null;
     this.failed = false;
   }
@@ -110,19 +113,25 @@ export class GameScene extends Phaser.Scene {
       }
       if (start.aiVillain) spawnVillainAI(w, start.aiVillain.character, start.aiVillain.kit);
     } else {
-      // Solo: the other heroes are bots; a runner meets one of them infected.
-      const { character, role } = this.params;
-      const kit = this.params.kit ?? w.rng.pick(KIT_IDS);
-      spawnLocalPlayer(w, "local", role === "hunter" ? villainPart(character, kit) : runnerPart(character));
+      // Solo: the other heroes are bots; a runner meets one of them infected. A hero's own kit
+      // comes with that hero.
+      const { character, role } = this.params, wanted = this.params.kit;
       let others = HERO_IDS.filter(id => id !== character);
-      if (role === "runner") {
-        const villain = w.rng.pick(others);
+      if (role === "hunter") {
+        const kit = wanted && kitAllowed(wanted, character) ? wanted : w.rng.pick(kitsFor(character));
+        spawnLocalPlayer(w, "local", villainPart(character, kit));
+      } else {
+        spawnLocalPlayer(w, "local", runnerPart(character));
+        const owner = wanted ? KITS[wanted].owner : undefined;
+        const villain = owner && owner !== character ? owner : w.rng.pick(others);
+        const kit = wanted && kitAllowed(wanted, villain) ? wanted : w.rng.pick(kitsFor(villain));
         spawnVillainAI(w, villain, kit);
         others = others.filter(id => id !== villain);
       }
       others.forEach((id, i) => spawnRunnerBot(w, id, level.npcSpawns[i % level.npcSpawns.length]));
     }
     w.abilities = new Abilities(w);
+    this.abilityFx = new AbilityFx(w);
 
     w.round = new Round(w, this.params.kit);
     w.director = new Director(w);
@@ -176,6 +185,7 @@ export class GameScene extends Phaser.Scene {
     this.shadows?.update();
     this.outlines?.update(dt);
     this.footprints?.update(dt);
+    this.abilityFx?.update(dt);
     this.soundscape?.update(dt);
     this.netsync?.update(time);
   }

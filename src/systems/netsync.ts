@@ -31,7 +31,11 @@ export class NetSync {
     on(ev.on("fusePicked", e => { if (!e.remote) this.send({ type: "fuse", op: "pick", index: e.index, by: e.by }); }));
     on(ev.on("fuseInserted", e => { if (!e.remote) this.send({ type: "fuse", op: "insert", index: e.index, by: e.by }); }));
     on(ev.on("noiseMade", e => this.send({ type: "noise", x: e.x, y: e.y, r: e.radius, kind: e.kind, by: e.by })));
-    on(ev.on("abilityUsed", e => { if (!e.remote) this.send({ type: "ability", by: e.by, x: e.x, y: e.y }); }));
+    on(ev.on("abilityUsed", e => {
+      if (e.remote) return;
+      this.send({ type: "ability", by: e.by, x: e.x, y: e.y, ...(e.slot === "q" ? { slot: "q" as const } : {}), ...(e.kind === "blight" ? { a: e.angle } : {}) });
+    }));
+    on(ev.on("blightHit", e => { if (!e.remote) this.send({ type: "blight", id: e.id, by: e.by, x: e.x, y: e.y, ...(e.trap ? { trap: e.trap } : {}) }); }));
     if (host) {
       on(ev.on("runnerCaught", e => this.send({ type: "caught", id: e.actor.id, by: e.by })));
       on(ev.on("brokeFree", e => { if (!e.remote) this.send({ type: "freed", id: e.actor.id, by: e.by }); }));
@@ -165,7 +169,15 @@ export class NetSync {
         break;
       case "ability": {
         const a = actor(msg.by);
-        if (a) w.abilities.use(a, true, { x: msg.x, y: msg.y });
+        if (a) w.abilities.use(a, true, { x: msg.x, y: msg.y }, msg.slot ?? "r", msg.a ?? a.facing);
+        relay();
+        break;
+      }
+      case "blight": {
+        // Told by the peer that simulates the runner (the host relays it on).
+        const hit = w.byId(actorId);
+        w.abilities.blightHit(w.byId(msg.by) ?? null, msg.trap ?? null, msg);
+        if (hit) w.events.emit("blightHit", { id: hit.id, by: msg.by, trap: msg.trap ?? null, x: msg.x, y: msg.y, remote: true });
         relay();
         break;
       }

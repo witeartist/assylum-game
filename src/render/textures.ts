@@ -8,6 +8,7 @@ import { PROP_ART, furnitureBox } from "./props";
 import { FURNITURE } from "../data/furniture";
 import { CHARACTERS } from "../data/characters";
 import { DECAL_KEYS } from "../data/rooms";
+import { prepareViews } from "./characterArt";
 
 const MAX_TEXTURE = 2048;
 const INDEX_KEY = "__assetIndex";
@@ -65,6 +66,7 @@ export function finishImages(scene: Phaser.Scene): void {
   }
   // Infected heroes whose art hasn't arrived: the healthy sprite, gone sickly.
   for (const def of Object.values(CHARACTERS)) add(def.infected, () => drawInfected(tex.get(def.texture).getSourceImage() as HTMLImageElement | HTMLCanvasElement));
+  prepareViews(scene, Object.values(CHARACTERS), isPlaceholder);
 }
 
 function drawInfected(src: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement {

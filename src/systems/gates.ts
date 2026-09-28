@@ -26,7 +26,7 @@ export interface Gate {
 }
 
 /** Seconds a door holds each kind of actor up (runners, and villains by kit). */
-const OPEN_TIME = { runner: 0.35, fox: 0.7, brute: 1.1 };
+const OPEN_TIME = { runner: 0.35, fox: 0.7, brute: 1.1, blight: 0.7 };
 /** How long the leaf takes to swing, ms. */
 const SWING_MS = 170;
 /** A door slammed on the run is louder. */

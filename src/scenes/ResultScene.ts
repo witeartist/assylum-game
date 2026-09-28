@@ -9,6 +9,7 @@ import type { ResultData } from "../systems/round";
 import type { GameSceneData } from "./GameScene";
 import { button, label, portrait, uiCamera } from "../ui/components";
 import { INK, TONES, type Tone } from "../ui/theme";
+import { heroTexture } from "../render/characterArt";
 
 const VIEW: Record<Outcome, { title: string; tone: Tone; good: boolean }> = {
   "escaped":   { title: "ВЫ СБЕЖАЛИ!",   tone: "good",    good: true },
@@ -35,7 +36,7 @@ export class ResultScene extends Phaser.Scene {
 
     label(this, CX, 130, view.title, "display", view.tone === "blood" ? INK.title : TONES[view.tone].ink);
     if (def) {
-      const img = portrait(this, CX, 222, hunter ? def.infected : def.texture, 72);
+      const img = portrait(this, CX, 222, heroTexture(def, hunter), 72);
       if (!view.good) img.setTint(0x505050);
       label(this, CX, 272, def.name, "h2", def.color);
     }

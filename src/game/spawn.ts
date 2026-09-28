@@ -3,7 +3,7 @@
 import { tileCenter } from "../core/geom";
 import type { Role, Tile } from "../core/types";
 import { CHARACTERS, type CharacterId, type KitId } from "../data/characters";
-import { BOSS_RUSH, BOT_SPEED_RANGE, BRUTE_LUNGE, HUNTER_WALK, RUNNER_RUN, RUNNER_WALK, STAMINA } from "../data/balance";
+import { BLIGHT, BOSS_RUSH, BOT_SPEED_RANGE, BRUTE_LUNGE, HUNTER_WALK, RUNNER_RUN, RUNNER_WALK, STAMINA } from "../data/balance";
 import { Actor, type Control } from "../entities/Actor";
 import { RunnerBot } from "../ai/runnerBot";
 import { HunterAI } from "../ai/hunter";
@@ -23,6 +23,7 @@ export function villainPart(character: CharacterId, kit: KitId): Part { return {
 function speedsFor(world: World, part: Part, control: Control, mul = 1): { walk: number; run: number; stamina: number } {
   const d = world.diff;
   if (part.kit === "fox") return { walk: d.foxSpeed * HUNTER_WALK, run: d.foxSpeed, stamina: Infinity };
+  if (part.kit === "blight") return { walk: d.foxSpeed * HUNTER_WALK, run: d.foxSpeed * BLIGHT.run, stamina: Infinity };
   if (part.kit === "brute" && control === "ai") return { walk: d.bossSpeed, run: d.bossSpeed * BOSS_RUSH, stamina: Infinity };
   if (part.kit === "brute") return { walk: d.foxSpeed * HUNTER_WALK, run: RUNNER_RUN * BRUTE_LUNGE.speed, stamina: BRUTE_LUNGE.time };
   const ab = CHARACTERS[part.character].ability, k = (ab?.speed ?? 1) * mul;
@@ -67,6 +68,6 @@ export function spawnVillainAI(world: World, character: CharacterId, kit: KitId)
   const control: Control = world.isAuthority ? "ai" : "remote";
   const part = villainPart(character, kit);
   const a = spawn(world, VILLAIN_AI_ID, part, control, spawnTile(world, part));
-  if (control === "ai") a.brain = kit === "fox" ? new HunterAI(world, a) : new BossAI(world, a);
+  if (control === "ai") a.brain = kit === "brute" ? new BossAI(world, a) : new HunterAI(world, a);
   return a;
 }

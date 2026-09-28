@@ -195,17 +195,17 @@ function assignRoomTypes(rng: Rng, rooms: Rect[]): Room[] {
   const area = new Map<number, number>();
   rooms.forEach((r, i) => area.set(group[i], (area.get(group[i]) ?? 0) + (r.w - 2) * (r.h - 2)));
   const count: Partial<Record<RoomType, number>> = {};
-  const cap: Partial<Record<RoomType, number>> = { canteen: 3, morgue: 4 };
+  const cap: Partial<Record<RoomType, number>> = { canteen: 3, morgue: 4, office: 3, hydro: 2 };
   const typeOf = new Map<number, RoomType>();
   return rooms.map((room, i) => {
     let type = typeOf.get(group[i]);
     if (!type) {
       const size = area.get(group[i]) ?? 0;
       const options: [RoomType, number][] = size >= 40
-        ? [["canteen", 3], ["ward", 4], ["procedure", 1], ["storage", 1]]
+        ? [["canteen", 3], ["ward", 4], ["procedure", 1], ["storage", 1], ["hydro", 1]]
         : size >= 16
-          ? [["ward", 4], ["procedure", 3], ["morgue", 2], ["storage", 2], ["isolation", 1]]
-          : [["isolation", 4], ["storage", 3], ["procedure", 1]];
+          ? [["ward", 4], ["procedure", 3], ["morgue", 2], ["storage", 2], ["isolation", 1], ["office", 2], ["hydro", 1]]
+          : [["isolation", 4], ["storage", 3], ["procedure", 1], ["office", 2]];
       const allowed = options.filter(([t]) => (count[t] ?? 0) < (cap[t] ?? Infinity));
       type = weightedPick(rng, allowed.length ? allowed : [["storage", 1]]);
       count[type] = (count[type] ?? 0) + 1;

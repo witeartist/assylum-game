@@ -34,6 +34,8 @@ const THIN_CAP_TINT = 0xd0d4d2;
 const FRAME = 0x4a4f4c;
 const FRAME_DARK = 0x16191a;
 const BROKEN = 0x2c2d2c;
+/** Drawn broken edge of a whole wall at a breach. */
+const BREACH_EDGE = "decals/breach_edge";
 
 interface Stamp {
   key: string;
@@ -247,7 +249,7 @@ export class WorldView {
 
     for (const f of level.furniture) {
       const b = furnitureLayout(world, f);
-      const img = placeStanding(scene, f.key, b.x, b.base, b.w);
+      const img = placeStanding(scene, f.key, b.x, b.base, b.w).setFlipX(!!f.flip);
       world.addProp(img, [{ x: b.x, y: b.base - 1 }, { x: b.foot.x0 + 1, y: b.base - 1 }, { x: b.foot.x1 - 1, y: b.base - 1 }, { x: b.x, y: b.foot.y0 + 1 }], f.solid);
     }
     this.buildDoors();
@@ -353,7 +355,13 @@ export class WorldView {
       const thin = [t.row - 1, t.row + 1].some(r => r >= 0 && r < MAP_H && this.world.walls[tileIndex(t.col, r)] >= THIN);
       const x0 = thin ? x + TILE / 2 - THIN_WALL / 2 : x, w = thin ? THIN_WALL : TILE;
       for (const [y, dir] of [[top, 1], [bottom, -1]] as [number, number][]) {
-        // Each chunk is part of the top of the wall it breaks off.
+        // Each chunk is part of the top of the wall it breaks off: the drawn broken edge on a
+        // whole wall (bricks and rebar sticking into the gap), a jagged outline on a thin one.
+        if (!thin && scene.textures.exists(BREACH_EDGE)) {
+          const img = scene.add.image(x0 + w / 2, y, BREACH_EDGE).setDepth(capDepth(t.row - dir) + 0.2).setFlipY(dir < 0).setFlipX(rng.chance(0.5));
+          img.setScale(w * 1.1 / img.width).setOrigin(0.5, dir > 0 ? 0.35 : 0.65);
+          continue;
+        }
         const g = scene.add.graphics().setDepth(capDepth(t.row - dir) + 0.2);
         g.fillStyle(BROKEN, 1).beginPath();
         g.moveTo(x0, y);

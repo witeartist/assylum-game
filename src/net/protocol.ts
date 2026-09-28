@@ -52,7 +52,8 @@ export type GameMessage =
   | { type: "escaped"; id: string }
   | { type: "caught"; id: string; by: string }                // host → clients
   | { type: "wake" }                                          // host → clients: the building woke up
-  | { type: "ability"; by: string; x: number; y: number }     // a villain used its R (flash or roar) here
+  | { type: "ability"; by: string; x: number; y: number; slot?: "q"; a?: number } // a villain used R (or Q) here, aiming at angle `a`
+  | { type: "blight"; id: string; by: string; x: number; y: number; trap?: string } // runner `id` was hit by blight (a spark, or trap `trap`)
   | { type: "ai"; character: CharacterId; kit: KitId; x: number; y: number } // host → clients: the AI took over a villain who left
   | { type: "left"; id: string }                              // host → clients
   | { type: "end"; results: Record<string, RunnerStatus> };   // host → clients
@@ -62,7 +63,7 @@ export type PingMessage = { type: "ping" };
 
 export type Message = LobbyMessage | GameMessage | PingMessage;
 
-const GAME_TYPES = new Set<string>(["pos", "snap", "key", "door", "hide", "item", "gate", "throw", "fuse", "fuseDrop", "noise", "check", "freed", "escaped", "caught", "wake", "ability", "ai", "left", "end"]);
+const GAME_TYPES = new Set<string>(["pos", "snap", "key", "door", "hide", "item", "gate", "throw", "fuse", "fuseDrop", "noise", "check", "freed", "escaped", "caught", "wake", "ability", "blight", "ai", "left", "end"]);
 
 export function isGameMessage(m: Message): m is GameMessage {
   return GAME_TYPES.has(m.type);

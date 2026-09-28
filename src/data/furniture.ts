@@ -13,9 +13,11 @@ export interface FurnitureDef {
   solid: boolean;
   /**
    * Where it stands: "north" against the north wall (cabinets, sinks, fridges…), "wall" along any
-   * wall, "center" in the middle of the room with space around it (tables, operating tables).
+   * wall, "center" in the middle of the room with space around it (tables, operating tables),
+   * "side" against the west or east wall — side-view art, drawn for a wall on its left and
+   * mirrored against the east wall.
    */
-  spot: "north" | "wall" | "center";
+  spot: "north" | "wall" | "center" | "side";
   places: Place[];
   /** Placed right below this piece when there is room (a bench at a table, a trolley by the operating table). */
   with?: string;
@@ -32,11 +34,11 @@ export const FURNITURE: FurnitureDef[] = [
   { key: "props/bedside_cabinet",    w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward"], weight: 3, height: 20 },
   { key: "props/iv_stand",           w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "procedure"], weight: 2, height: 34 },
   { key: "props/wheelchair",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "corridor"], weight: 1, height: 26 },
-  { key: "props/chair_metal",        w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "canteen"], weight: 2, height: 22 },
+  { key: "props/chair_metal",        w: 1, h: 1, solid: true,  spot: "wall",   places: ["ward", "canteen", "office"], weight: 2, height: 22 },
   { key: "props/operating_table",    w: 1, h: 2, solid: true,  spot: "center", places: ["procedure"], weight: 3, with: "props/instrument_trolley" },
   { key: "props/instrument_trolley", w: 1, h: 1, solid: true,  spot: "wall",   places: ["procedure", "morgue"], weight: 2, height: 22 },
   { key: "props/medicine_cabinet",   w: 1, h: 1, solid: true,  spot: "north",  places: ["procedure", "storage"], weight: 2, height: 34 },
-  { key: "props/sink",               w: 1, h: 1, solid: true,  spot: "north",  places: ["procedure", "morgue", "isolation"], weight: 2, height: 22 },
+  { key: "props/sink",               w: 1, h: 1, solid: true,  spot: "north",  places: ["procedure", "morgue", "isolation", "hydro"], weight: 2, height: 22 },
   { key: "props/canteen_table",      w: 3, h: 1, solid: true,  spot: "center", places: ["canteen"], weight: 5, with: "props/canteen_bench" },
   { key: "props/canteen_bench",      w: 3, h: 1, solid: true,  spot: "wall",   places: ["canteen"], weight: 1 },
   { key: "props/serving_counter",    w: 3, h: 1, solid: true,  spot: "north",  places: ["canteen"], weight: 2, height: 40 },
@@ -46,7 +48,7 @@ export const FURNITURE: FurnitureDef[] = [
   { key: "props/shelf_boxes",        w: 2, h: 1, solid: true,  spot: "north",  places: ["storage"], weight: 4, height: 40 },
   { key: "props/boxes_stack",        w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage"], weight: 3, height: 24 },
   { key: "props/barrel",             w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage"], weight: 2, height: 22 },
-  { key: "props/mop_bucket",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage", "corridor"], weight: 1, height: 26 },
+  { key: "props/mop_bucket",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage", "corridor", "hydro"], weight: 1, height: 26 },
   { key: "props/linen_cart",         w: 1, h: 1, solid: true,  spot: "wall",   places: ["storage", "ward"], weight: 1, height: 24 },
   { key: "props/autopsy_table",      w: 1, h: 2, solid: true,  spot: "center", places: ["morgue"], weight: 3 },
   { key: "props/body_on_gurney",     w: 1, h: 2, solid: true,  spot: "center", places: ["morgue"], weight: 3 },
@@ -56,8 +58,22 @@ export const FURNITURE: FurnitureDef[] = [
   { key: "props/waiting_bench",      w: 2, h: 1, solid: true,  spot: "north",  places: ["corridor"], weight: 2 },
   { key: "props/nurse_desk",         w: 2, h: 1, solid: true,  spot: "north",  places: ["corridor"], weight: 1 },
   { key: "props/radiator",           w: 1, h: 1, solid: true,  spot: "north",  places: ["corridor", "ward"], weight: 2, height: 18 },
-  { key: "props/trash_bin",          w: 1, h: 1, solid: true,  spot: "wall",   places: ["corridor", "canteen"], weight: 2, height: 17 },
-  { key: "props/fallen_chair",       w: 1, h: 1, solid: false, spot: "wall",   places: ["corridor", "canteen", "ward"], weight: 2, height: 16 },
+  { key: "props/trash_bin",          w: 1, h: 1, solid: true,  spot: "wall",   places: ["corridor", "canteen", "office"], weight: 2, height: 17 },
+  { key: "props/fallen_chair",       w: 1, h: 1, solid: false, spot: "wall",   places: ["corridor", "canteen", "ward", "office"], weight: 2, height: 16 },
+  // Side views of the things above, for the west and east walls.
+  { key: "props/shelf_boxes_side",      w: 1, h: 2, solid: true, spot: "side", places: ["storage"], weight: 3, height: 52 },
+  { key: "props/morgue_fridge_side",    w: 1, h: 2, solid: true, spot: "side", places: ["morgue"], weight: 2, height: 58 },
+  { key: "props/medicine_cabinet_side", w: 1, h: 1, solid: true, spot: "side", places: ["procedure", "storage"], weight: 2, height: 38 },
+  { key: "props/sink_side",             w: 1, h: 1, solid: true, spot: "side", places: ["procedure", "morgue", "isolation", "hydro"], weight: 2, height: 26 },
+  { key: "props/radiator_side",         w: 1, h: 1, solid: true, spot: "side", places: ["ward", "office"], weight: 2, height: 26 },
+  // The doctor's office.
+  { key: "props/desk",                  w: 2, h: 1, solid: true, spot: "center", places: ["office"], weight: 4, with: "props/chair_metal" },
+  { key: "props/bookshelf",             w: 2, h: 1, solid: true, spot: "north",  places: ["office"], weight: 3 },
+  { key: "props/filing_cabinet",        w: 1, h: 1, solid: true, spot: "wall",   places: ["office", "storage"], weight: 3, height: 40 },
+  // Hydrotherapy.
+  { key: "props/hydro_tub",             w: 1, h: 2, solid: true, spot: "center", places: ["hydro"], weight: 4 },
+  { key: "props/shower_stall",          w: 1, h: 1, solid: true, spot: "north",  places: ["hydro"], weight: 3, height: 46 },
+  { key: "props/mattress_floor",        w: 1, h: 2, solid: false, spot: "wall",  places: ["isolation", "hydro"], weight: 2 },
 ];
 
 export const FURNITURE_BY_KEY: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map(f => [f.key, f]));

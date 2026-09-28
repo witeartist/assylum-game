@@ -23,6 +23,14 @@ const DISTANT = { min: 18, max: 45 };
 const DISTANT_KEYS: SoundKey[] = ["distantBang", "distantScream", "distantGroan", "drip"];
 /** Seconds between the fox's laughs from afar. */
 const LAUGH = { min: 45, max: 90, far: TILE * 10 };
+/** Your own steps are quieter than anyone else's: you hear them without listening. */
+const OWN_STEP = 0.4;
+/**
+ * Steps of the same kind this close together (s, px) sound as one: people walking side by side
+ * make a group's footfall, not a rattle.
+ */
+const STEP_BLEND = { time: 0.08, near: TILE * 2 };
+const STEP_KEYS: ReadonlySet<SoundKey> = new Set(["stepWalk", "stepRun", "stepMonster", "stepClaws"]);
 
 export class Soundscape {
   private lastNoise: number;
@@ -38,6 +46,8 @@ export class Soundscape {
   private typed = 0;
   private states = new Map<Actor, string>();
   private growled = new Map<Actor, number>();
+  /** Steps played just now: time, kind and place. */
+  private recentSteps: { t: number; key: SoundKey; x: number; y: number }[] = [];
   private t = 0;
   private off: (() => void)[] = [];
 
@@ -95,10 +105,18 @@ export class Soundscape {
       else this.at("doorSlam", g, { volume: a?.gait === "run" ? 1.15 : 0.7 });
     });
     on("buildingAwake", () => { audio.play("distantGroan", { volume: 1.6 }); audio.play("stinger", { delay: 0.3 }); });
-    on("abilityUsed", ({ kind, by, x, y }) => {
+    on("abilityUsed", ({ kind, slot, by, x, y }) => {
       const a = this.actor(by), p = a === world.vision.viewer ? a : { x, y };
       if (kind === "fox") this.at("foxFlash", p);
-      else this.at("roar", p, { range: 32 });
+      else if (kind === "brute") this.at("roar", p, { range: 32 });
+      // Blight: a spark crackles off her horns; a patch seeps into the floor with a wet crackle.
+      else if (slot === "q") this.at("glowstick", p, { volume: 0.7, rate: 0.7 });
+      else this.at("lampDie", p, { volume: 0.9, rate: 1.4 });
+    });
+    on("blightHit", ({ id, x, y }) => {
+      this.at("lampDie", { x, y }, { volume: 1.1, rate: 0.8 });
+      const r = this.actor(id);
+      if (r) this.at("gasp", r, { delay: 0.1 });
     });
   }
 
@@ -140,12 +158,21 @@ export class Soundscape {
         : e.kind === "monster" ? (e.source?.kit === "brute" ? "stepMonster" : "stepClaws")
         : e.kind === "breath" ? "pant" : e.kind === "gasp" ? "gasp" : e.kind === "glass" ? "bottleBreak" : e.kind === "alarm" ? "terminalError" : null;
       if (!key) continue;
-      if (e.source === ear) { audio.play(key, { volume: 0.55 }); continue; }
+      if (e.source === ear) { audio.play(key, { volume: STEP_KEYS.has(key) ? OWN_STEP : 0.55 }); continue; }
       if (!w.noise.hears(ear, e)) continue;
+      if (STEP_KEYS.has(key) && this.blendStep(key, e)) continue;
       const clear = hasLineOfSight(w.sight, ear, e);
       audio.play(key, { at: e, range: e.radius / TILE * 1.2, muffle: clear ? 0 : 1 });
     }
     this.lastNoise = w.noise.lastId;
+  }
+
+  /** A step right on top of another of the same kind nearby is heard as that one. */
+  private blendStep(key: SoundKey, p: Vec2): boolean {
+    this.recentSteps = this.recentSteps.filter(s => this.t - s.t < STEP_BLEND.time);
+    if (this.recentSteps.some(s => s.key === key && dist(s, p) < STEP_BLEND.near)) return true;
+    this.recentSteps.push({ t: this.t, key, x: p.x, y: p.y });
+    return false;
   }
 
   /** Your own hands: the flashlight (and it dying at a roar), the terminal. */
